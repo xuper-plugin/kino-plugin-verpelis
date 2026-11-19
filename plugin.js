@@ -9,29 +9,34 @@ var __export = (target, all) => {
 var RESOLVER_REPO = "xuper-plugin/kino-plugin-kino-resolver";
 var SUPPORT_URL = "https://ko-fi.com/xuperplugins";
 var LANG = { Lat: "Latino", LAT: "Latino", Esp: "Español", ESP: "Español", Vose: "VOSE", VOSE: "VOSE" };
-var ROWS_TTL_MS = 3e5;
-var supportButton = () => ({
-  type: "ElevatedButton",
-  key: "support",
-  labelText: "Contribuir con una donación",
-  labelTextEn: "Contribute with a donation",
-  onPressed: { go: { url: { href: SUPPORT_URL, title: "Apóyanos en Ko-fi" } } }
-});
-var supportQr = () => ({
-  type: "QrImage",
-  key: "supportQr",
-  value: SUPPORT_URL,
-  size: "large",
-  labelText: "Escanea con tu celular para apoyarnos en Ko-fi",
-  labelTextEn: "Scan with your phone to support us on Ko-fi"
-});
-var support = (device) => device === "tv" ? supportQr() : supportButton();
+var TTL = 3e5;
+var TABS = [{ key: "movie", es: "Películas", en: "Movies" }, { key: "tvshow", es: "Series", en: "Series" }];
 function slug(url) {
   const last = String(url).replace(/\/+$/, "").split("/").pop() || "x";
   return last.replace(/[^A-Za-z0-9._~-]/g, "-").slice(0, 120) || "x";
 }
+var supportButton = () => ({ type: "ElevatedButton", key: "support", labelText: "Contribuir con una donación", labelTextEn: "Contribute with a donation", onPressed: { go: { url: { href: SUPPORT_URL, title: "Apóyanos en Ko-fi" } } } });
+var supportQr = () => ({ type: "QrImage", key: "supportQr", value: SUPPORT_URL, size: "large", labelText: "Escanea con tu celular para apoyarnos en Ko-fi", labelTextEn: "Scan with your phone to support us on Ko-fi" });
+var support = (device) => device === "tv" ? supportQr() : supportButton();
+var heroCard = (item) => {
+  const h = { type: "heroCard", key: "hero", title: String(item.title), titleEn: String(item.title) };
+  const img = item.backdrop || item.poster;
+  if (img) h.image = img;
+  h.buttons = [{ type: "ElevatedButton", key: "heroPlay", labelText: "Ver", labelTextEn: "Watch", onPressed: { event: "play", arg: item.ref } }];
+  return h;
+};
+var rail = (title, items) => ({ type: "titleRail", key: "rail-" + slug(title), title, titleEn: title, items });
+var tabBar = (active) => ({ type: "TabBar", key: "tabs", value: active, onChanged: "tab", tabs: TABS.map((t) => ({ key: t.key, label: t.es, labelEn: t.en })) });
+var homeAppBar = (active) => ({
+  type: "AppBar",
+  key: "bar",
+  mergeWithKinoBar: true,
+  dense: true,
+  leading: { type: "IconButton", key: "settings", icon: "settings", labelText: "Ajustes", labelTextEn: "Settings", onPressed: "toggleSettings" },
+  actions: [{ type: "IconButton", key: "search", icon: "search", labelText: "Buscar", labelTextEn: "Search", onPressed: "toggleSearch" }],
+  bottom: tabBar(active)
+});
 function welcomeScreen(name, installed, device) {
-  const appBar = { type: "AppBar", key: "bar", mergeWithKinoBar: true, dense: true, title: name, titleEn: name };
   const children = [{ type: "Text", text: "Bienvenido a " + name, textEn: "Welcome to " + name, style: "h3" }];
   if (!installed) {
     children.push({ type: "Text", text: "Para ver el contenido necesitas el reproductor Kino Resolver (gratis). Lo instalas una vez y sirve para todos los plugins de sitios.", textEn: "To watch, you need the free Kino Resolver player. Install it once and it works for every site plugin.", color: "secondary" });
@@ -42,22 +47,19 @@ function welcomeScreen(name, installed, device) {
     children.push({ type: "ElevatedButton", key: "enter", labelText: "Ir a plugin", labelTextEn: "Go to plugin", onPressed: "enter" });
   }
   children.push(support(device));
-  const body = { type: "SingleChildScrollView", key: "welcome", children: [{ type: "Column", padding: 24, gap: 16, crossAxisAlignment: "stretch", children }] };
-  return { type: "Scaffold", key: "app", appBar, body };
+  return { type: "Scaffold", key: "app", body: { type: "SingleChildScrollView", key: "welcome", children: [{ type: "Column", padding: 24, gap: 16, crossAxisAlignment: "stretch", children }] } };
 }
-function heroCard(item) {
-  const h = { type: "heroCard", key: "hero", title: String(item.title), titleEn: String(item.title) };
-  const img = item.backdrop || item.poster;
-  if (img) h.image = img;
-  h.buttons = [{ type: "ElevatedButton", key: "heroPlay", labelText: "Ver", labelTextEn: "Watch", onPressed: { event: "open", arg: item.ref } }];
-  return h;
-}
-var rail = (title, items) => ({ type: "titleRail", key: "rail-" + slug(title), title, titleEn: title, items });
-function homeAppBar(name, searching) {
-  return { type: "AppBar", key: "bar", mergeWithKinoBar: true, dense: true, title: name, titleEn: name, actions: [
-    { type: "IconButton", key: "search", icon: searching ? "close" : "search", labelText: searching ? "Cerrar" : "Buscar", labelTextEn: searching ? "Close" : "Search", onPressed: "toggleSearch" },
-    { type: "IconButton", key: "settings", icon: "settings", labelText: "Ajustes", labelTextEn: "Settings", onPressed: "toggleSettings" }
-  ] };
+function searchScreen(name, state) {
+  const q = state && state.q || "";
+  const results = state && state.results || [];
+  const appBar = { type: "AppBar", key: "bar", mergeWithKinoBar: true, dense: true, title: "Buscar", titleEn: "Search", leading: { type: "IconButton", key: "back", icon: "arrow_back", labelText: "Atrás", labelTextEn: "Back", onPressed: "toggleSearch" } };
+  const children = [{ type: "Form", key: "searchForm", onSubmitted: "search", gap: 12, children: [
+    { type: "TextField", key: "q", labelText: "Buscar en " + name, labelTextEn: "Search " + name, value: q, maxLength: 120 },
+    { type: "ElevatedButton", labelText: "Buscar", labelTextEn: "Search", submit: true }
+  ] }];
+  if (results.length) children.push({ type: "titleGrid", key: "results", items: results });
+  else if (q) children.push({ type: "Text", key: "empty", text: "Sin resultados", textEn: "No results", color: "secondary" });
+  return { type: "Scaffold", key: "app", appBar, body: { type: "SingleChildScrollView", key: "searchPage", children: [{ type: "Column", padding: 16, gap: 16, crossAxisAlignment: "stretch", children }] } };
 }
 function settingsScreen(name, device) {
   const appBar = { type: "AppBar", key: "bar", mergeWithKinoBar: true, dense: true, title: "Ajustes", titleEn: "Settings", leading: { type: "IconButton", key: "back", icon: "arrow_back", labelText: "Atrás", labelTextEn: "Back", onPressed: "closeSettings" } };
@@ -70,32 +72,13 @@ function settingsScreen(name, device) {
   ] }] };
   return { type: "Scaffold", key: "app", appBar, body };
 }
-function searchScreen(name, state) {
-  const q = state && state.q || "";
-  const results = state && state.results || [];
-  const children = [
-    { type: "Form", key: "searchForm", onSubmitted: "search", gap: 12, children: [
-      { type: "TextField", key: "q", labelText: "Buscar en " + name, labelTextEn: "Search " + name, value: q, maxLength: 120 },
-      { type: "ElevatedButton", labelText: "Buscar", labelTextEn: "Search", submit: true }
-    ] }
-  ];
-  if (results.length) children.push({ type: "titleGrid", key: "results", items: results });
-  else if (q) children.push({ type: "Text", key: "empty", text: "Sin resultados", textEn: "No results", color: "secondary" });
-  return { type: "Scaffold", key: "app", appBar: homeAppBar(name, true), body: { type: "SingleChildScrollView", key: "searchPage", children: [{ type: "Column", padding: 16, gap: 16, crossAxisAlignment: "stretch", children }] } };
-}
-function homeScreen(name, rows, device) {
+function homeScreen(name, active, rows) {
   const featured = rows.length && rows[0].items.length ? rows[0].items : [];
   const hero = featured.length ? heroCard(featured[0]) : null;
-  const rails = [];
-  if (featured.length > 1) rails.push(rail("Destacados", featured));
-  for (const r of rows) rails.push(rail(r.title, r.items));
-  const bodyChildren = rails.length ? rails : [{ type: "Text", key: "empty", text: "Usa la lupa para buscar", textEn: "Use search to find titles", color: "secondary" }];
-  bodyChildren.push(support(device));
-  const body = { type: "SingleChildScrollView", key: "homePage", children: [
-    ...hero ? [hero] : [],
-    { type: "Column", key: "homeBody", padding: 16, gap: 16, children: bodyChildren }
-  ] };
-  return { type: "Scaffold", key: "app", appBar: homeAppBar(name, false), body };
+  const rails = rows.map((r) => rail(r.title, r.items));
+  const rowsNode = { type: "Column", key: "rows-" + active, padding: 16, gap: 16, children: rails.length ? rails : [{ type: "Text", key: "empty", text: "No se pudo cargar el catálogo. Usa la lupa para buscar.", textEn: "Couldn't load the catalogue. Use search instead.", color: "secondary" }] };
+  const body = { type: "SingleChildScrollView", key: "home-" + active, children: [...hero ? [hero] : [], rowsNode] };
+  return { type: "Scaffold", key: "app", appBar: homeAppBar(active), body };
 }
 function channel(site) {
   const name = site.NAME || "este sitio";
@@ -106,22 +89,20 @@ function channel(site) {
     if (it.thumb) item.poster = it.thumb;
     return item;
   }
-  async function doSearch(q) {
-    return (await site.search(String(q || "")) || []).map(mapItem);
-  }
-  let rowsCache = null, rowsAt = 0;
-  async function loadRows() {
-    if (!site.home) return [];
+  const doSearch = async (q) => (await site.search(String(q || "")) || []).map(mapItem);
+  const cache = {}, at = {};
+  async function loadCatalog(tab) {
+    if (!site.catalog) return [];
     const now = Date.now();
-    if (rowsCache && now - rowsAt < ROWS_TTL_MS) return rowsCache;
+    if (cache[tab] && now - at[tab] < TTL) return cache[tab];
     try {
-      const rows = await site.home() || [];
-      rowsCache = rows.map((r) => ({ title: r.title, items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
-      rowsAt = now;
+      const rows = await site.catalog(tab) || [];
+      cache[tab] = rows.map((r) => ({ title: r.title, items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
+      at[tab] = now;
     } catch {
-      rowsCache = rowsCache || [];
+      cache[tab] = cache[tab] || [];
     }
-    return rowsCache;
+    return cache[tab];
   }
   const hasResolver = (ctx) => !!(ctx && ctx.installed && ctx.installed[RESOLVER_REPO]);
   return {
@@ -152,13 +133,26 @@ function channel(site) {
       const streams = [];
       const seen = /* @__PURE__ */ new Set();
       for (const e of embeds) {
-        let res;
+        let got = [];
         try {
-          res = await kino.plugins.call("resolver", "resolve", { url: e.url, referer: site.HOST });
+          const res = await kino.plugins.call("resolver", "resolve", { url: e.url, referer: site.HOST });
+          got = res && res.streams || [];
         } catch {
-          continue;
+          got = [];
         }
-        for (const s of res && res.streams || []) {
+        if (!got.length && globalThis.kino && kino.browser && typeof kino.browser.capture === "function") {
+          try {
+            const cap = await kino.browser.capture(e.url, { headers: { Referer: site.HOST }, timeoutMs: 18e3 });
+            got = (cap && cap.media || []).map((mm) => ({
+              url: mm.url,
+              server: "browser",
+              kind: /\.m3u8(\?|$)/i.test(mm.url) ? "hls" : /\.mpd(\?|$)/i.test(mm.url) ? "dash" : "mp4",
+              headers: Object.entries(mm.headers || {}).filter(([, v]) => v != null).map(([name2, value]) => ({ name: name2, value: String(value) }))
+            }));
+          } catch {
+          }
+        }
+        for (const s of got) {
           if (!s.url || seen.has(s.url)) continue;
           seen.add(s.url);
           const stream = { url: s.url };
@@ -178,7 +172,7 @@ function channel(site) {
       if (rest.length) main.alternatives = rest.slice(0, 8);
       return main;
     },
-    // ---- welcome gate -> Home (scaffold) + search + settings ----
+    // ---- welcome gate -> tabbed Home + search + settings ----
     async screen(ctx) {
       const installed = hasResolver(ctx);
       const state = ctx && ctx.state || {};
@@ -188,25 +182,26 @@ function channel(site) {
       if (fromSettings || state.mode === "settings") return settingsScreen(name, device);
       if (!state.entered) return welcomeScreen(name, true, device);
       if (state.mode === "search") return searchScreen(name, state);
-      return homeScreen(name, await loadRows(), device);
+      const active = state.tab || "movie";
+      return homeScreen(name, active, await loadCatalog(active));
     },
     async screenEvent(ctx) {
       const { name: ev, value, arg, installed, state } = ctx || {};
-      const entered = { entered: true };
+      const base = { entered: true, tab: state && state.tab || "movie" };
       if (ev === "install") return { go: { installPlugin: { repo: RESOLVER_REPO } } };
-      if (ev === "enter") return { state: entered };
-      if (ev === "toggleSettings") return { state: { ...entered, mode: "settings" } };
-      if (ev === "closeSettings") return { state: { ...entered, mode: null } };
-      if (ev === "toggleSearch") return { state: { ...entered, mode: state && state.mode === "search" ? null : "search" } };
-      if (ev === "open") {
+      if (ev === "enter") return { state: base };
+      if (ev === "tab") return { state: { ...base, tab: (value !== void 0 ? value : arg) || "movie" } };
+      if (ev === "toggleSettings") return { state: { ...base, mode: "settings" } };
+      if (ev === "closeSettings") return { state: { ...base, mode: null } };
+      if (ev === "toggleSearch") return { state: { ...base, mode: state && state.mode === "search" ? null : "search" } };
+      if (ev === "play") {
         const ref = String(arg || "");
         return ref ? { go: { title: { ref, kind: ref[0] === "s" ? "series" : "movie" } } } : null;
       }
       if (ev === "search") {
         if (!(installed && installed[RESOLVER_REPO])) return { toast: "Primero instala Kino Resolver", toastEn: "Install Kino Resolver first" };
         const q = value && typeof value.q === "string" ? value.q.trim() : "";
-        if (!q) return { state: { ...entered, mode: "search", q: "", results: [] } };
-        return { state: { ...entered, mode: "search", q, results: await doSearch(q) } };
+        return { state: { ...base, mode: "search", q, results: q ? await doSearch(q) : [] } };
       }
       return null;
     }
@@ -218,9 +213,9 @@ var site_exports = {};
 __export(site_exports, {
   HOST: () => HOST,
   NAME: () => NAME,
+  catalog: () => catalog,
   episodesOf: () => episodesOf,
   findvideos: () => findvideos,
-  home: () => home,
   search: () => search,
   seasons: () => seasons
 });
@@ -301,24 +296,47 @@ async function episodesOf(url, season) {
   }
   return out;
 }
-async function catalog(url, type) {
-  const data = await dl(url);
-  const bloque = single(data, ">Añadido recientemente<(.*?)>Géneros<") || single(data, "</h1>(.*?)>Géneros<") || data;
+function parseCards(bloque, type) {
   const out = [];
   for (const m of multi(bloque, "<article(.*?)</article>")) {
     const u = single(m, '<a href="(.*?)"');
     const title = clean(single(m, 'alt="(.*?)"'));
     if (!u || !title) continue;
     out.push({ url: u, title, thumb: single(m, '<img src="(.*?)"'), year: single(m, "</h3><span>(.*?)</span>") || "", type });
-    if (out.length >= 20) break;
+    if (out.length >= 18) break;
   }
   return out;
 }
-async function home() {
-  const [pelis, series] = await Promise.all([catalog(HOST + "peliculas/", "movie"), catalog(HOST + "series/", "tvshow")]);
+async function listPage(url, type) {
+  const data = await dl(url);
+  const bloque = single(data, ">Añadido recientemente<(.*?)>Géneros<") || single(data, "</h1>(.*?)>Géneros<") || data;
+  return parseCards(bloque, type);
+}
+async function genreList(base) {
+  const data = await dl(base);
+  const bloque = single(data, ">Géneros<(.*?)</ul>");
+  return multi(bloque, '<a href="(.*?)".*?>(.*?)</a>').map(([u, t]) => ({ url: u, title: clean(String(t)).replace(/&amp;/g, "&") })).filter((g) => g.url && g.title);
+}
+async function catalog(kind) {
+  const base = kind === "tvshow" ? HOST + "series/" : HOST + "peliculas/";
+  const type = kind === "tvshow" ? "tvshow" : "movie";
+  const recientes = await listPage(base, type);
   const rows = [];
-  if (pelis.length) rows.push({ title: "Películas", items: pelis });
-  if (series.length) rows.push({ title: "Series", items: series });
+  if (recientes.length) rows.push({ title: kind === "tvshow" ? "Series recientes" : "Estrenos", items: recientes });
+  let genres = [];
+  try {
+    genres = await genreList(base);
+  } catch {
+  }
+  const genreRows = await Promise.all(genres.slice(0, 6).map(async (g) => {
+    try {
+      const items = await listPage(g.url, type);
+      return items.length ? { title: g.title, items } : null;
+    } catch {
+      return null;
+    }
+  }));
+  for (const r of genreRows) if (r) rows.push(r);
   return rows;
 }
 async function findvideos(url) {
