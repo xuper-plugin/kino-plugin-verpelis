@@ -10,7 +10,7 @@ var RESOLVER_REPO = "xuper-plugin/kino-plugin-kino-resolver";
 var SUPPORT_URL = "https://ko-fi.com/xuperplugins";
 var LANG = { Lat: "Latino", LAT: "Latino", Esp: "Español", ESP: "Español", Vose: "VOSE", VOSE: "VOSE" };
 var TTL = 3e5;
-var TABS = [{ key: "movie", es: "Películas", en: "Movies" }, { key: "tvshow", es: "Series", en: "Series" }];
+var TABS = [{ key: "movie", es: "Películas", en: "Movies" }, { key: "tvshow", es: "Series", en: "Series" }, { key: "popular", es: "Populares", en: "Popular" }];
 function slug(url) {
   const last = String(url).replace(/\/+$/, "").split("/").pop() || "x";
   return last.replace(/[^A-Za-z0-9._~-]/g, "-").slice(0, 120) || "x";
@@ -18,19 +18,6 @@ function slug(url) {
 var supportButton = () => ({ type: "ElevatedButton", key: "support", labelText: "Contribuir con una donación", labelTextEn: "Contribute with a donation", onPressed: { go: { url: { href: SUPPORT_URL, title: "Apóyanos en Ko-fi" } } } });
 var supportQr = () => ({ type: "QrImage", key: "supportQr", value: SUPPORT_URL, size: "large", labelText: "Escanea con tu celular para apoyarnos en Ko-fi", labelTextEn: "Scan with your phone to support us on Ko-fi" });
 var support = (device) => device === "tv" ? supportQr() : supportButton();
-var storeGet = (k) => {
-  try {
-    return globalThis.kino && kino.storage && typeof kino.storage.get === "function" ? kino.storage.get(k) : null;
-  } catch {
-    return null;
-  }
-};
-var storeSet = (k, v) => {
-  try {
-    if (globalThis.kino && kino.storage && typeof kino.storage.set === "function") kino.storage.set(k, v);
-  } catch {
-  }
-};
 var heroCard = (item) => {
   const h = { type: "heroCard", key: "hero", title: String(item.title), titleEn: String(item.title) };
   const img = item.backdrop || item.poster;
@@ -52,17 +39,13 @@ var homeAppBar = (active) => ({
   ],
   bottom: tabBar(active)
 });
-function welcomeScreen(name, installed, device) {
-  const children = [{ type: "Text", text: "Bienvenido a " + name, textEn: "Welcome to " + name, style: "h3" }];
-  if (!installed) {
-    children.push({ type: "Text", text: "Para ver el contenido necesitas el reproductor Kino Resolver (gratis). Lo instalas una vez y sirve para todos los plugins de sitios.", textEn: "To watch, you need the free Kino Resolver player. Install it once and it works for every site plugin.", color: "secondary" });
-    children.push({ type: "ElevatedButton", key: "install", labelText: "Instalar Kino Resolver", labelTextEn: "Install Kino Resolver", onPressed: "install" });
-    children.push({ type: "Text", text: "Cuando termine la instalación, toca «Ir a plugin».", textEn: "When it finishes installing, tap “Go to plugin”.", color: "secondary", style: "caption" });
-  } else {
-    children.push({ type: "Text", text: "¡Listo! Kino Resolver está instalado.", textEn: "Done! Kino Resolver is installed.", color: "primary" });
-    children.push({ type: "ElevatedButton", key: "enter", labelText: "Ir a plugin", labelTextEn: "Go to plugin", onPressed: "enter" });
-  }
-  children.push(support(device));
+function welcomeScreen(name, device) {
+  const children = [
+    { type: "Text", text: "Bienvenido a " + name, textEn: "Welcome to " + name, style: "h3" },
+    { type: "Text", text: "Para ver el contenido necesitas el reproductor Kino Resolver (gratis). Lo instalas una vez y sirve para todos los plugins de sitios.", textEn: "To watch, you need the free Kino Resolver player. Install it once and it works for every site plugin.", color: "secondary" },
+    { type: "ElevatedButton", key: "install", labelText: "Instalar Kino Resolver", labelTextEn: "Install Kino Resolver", onPressed: "install" },
+    support(device)
+  ];
   return { type: "Scaffold", key: "app", body: { type: "SingleChildScrollView", key: "welcome", children: [{ type: "Column", padding: 24, gap: 16, crossAxisAlignment: "stretch", children }] } };
 }
 function searchScreen(name, state) {
@@ -194,21 +177,16 @@ function channel(site) {
       const state = ctx && ctx.state || {};
       const device = ctx && ctx.device || "phone";
       const fromSettings = !!(ctx && ctx.args && ctx.args.from === "settings");
-      if (!installed) return welcomeScreen(name, false, device);
+      if (!installed) return welcomeScreen(name, device);
       if (fromSettings || state.mode === "settings") return settingsScreen(name, device);
-      if (!(state.entered === true || storeGet("seen") === "1")) return welcomeScreen(name, true, device);
       if (state.mode === "search") return searchScreen(name, state);
       const active = state.tab || "movie";
       return homeScreen(name, active, await loadCatalog(active));
     },
     async screenEvent(ctx) {
       const { name: ev, value, arg, installed, state } = ctx || {};
-      const base = { entered: true, tab: state && state.tab || "movie" };
+      const base = { tab: state && state.tab || "movie" };
       if (ev === "install") return { go: { installPlugin: { repo: RESOLVER_REPO } } };
-      if (ev === "enter") {
-        storeSet("seen", "1");
-        return { state: base };
-      }
       if (ev === "tab") return { state: { ...base, tab: (value !== void 0 ? value : arg) || "movie" } };
       if (ev === "toggleSettings") return { state: { ...base, mode: "settings" } };
       if (ev === "closeSettings") return { state: { ...base, mode: null } };
@@ -336,7 +314,24 @@ async function genreList(base) {
   const bloque = single(data, ">Géneros<(.*?)</ul>");
   return multi(bloque, '<a href="(.*?)".*?>(.*?)</a>').map(([u, t]) => ({ url: u, title: clean(String(t)).replace(/&amp;/g, "&") })).filter((g) => g.url && g.title);
 }
+async function popularCatalog() {
+  const data = await dl(HOST + "tendencias/");
+  const movies = [], series = [];
+  for (const m of multi(data, "<article(.*?)</article>")) {
+    const u = single(m, '<a href="(.*?)"');
+    const title = clean(single(m, 'alt="(.*?)"'));
+    if (!u || !title) continue;
+    const type = /\/series\//.test(u) ? "tvshow" : "movie";
+    const card = { url: u, title, thumb: single(m, '<img src="(.*?)"'), year: single(m, "</h3><span>(.*?)</span>") || "", type };
+    (type === "tvshow" ? series : movies).push(card);
+  }
+  const rows = [];
+  if (movies.length) rows.push({ title: "Películas populares", items: movies.slice(0, 18) });
+  if (series.length) rows.push({ title: "Series populares", items: series.slice(0, 18) });
+  return rows;
+}
 async function catalog(kind) {
+  if (kind === "popular") return popularCatalog();
   const base = kind === "tvshow" ? HOST + "series/" : HOST + "peliculas/";
   const type = kind === "tvshow" ? "tvshow" : "movie";
   const recientes = await listPage(base, type);
