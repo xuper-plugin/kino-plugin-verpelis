@@ -1,7 +1,7 @@
 {
   "id": "verpelis",
   "name": "VerPelis",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "apiVersion": 20,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -15,6 +15,7 @@
     "xuper-plugin/kino-plugin-kino-resolver"
   ],
   "browser": true,
+  "fetchHosts": "any",
   "capabilities": [
     "search",
     "resolve",
