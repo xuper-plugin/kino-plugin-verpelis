@@ -18,6 +18,19 @@ function slug(url) {
 var supportButton = () => ({ type: "ElevatedButton", key: "support", labelText: "Contribuir con una donación", labelTextEn: "Contribute with a donation", onPressed: { go: { url: { href: SUPPORT_URL, title: "Apóyanos en Ko-fi" } } } });
 var supportQr = () => ({ type: "QrImage", key: "supportQr", value: SUPPORT_URL, size: "large", labelText: "Escanea con tu celular para apoyarnos en Ko-fi", labelTextEn: "Scan with your phone to support us on Ko-fi" });
 var support = (device) => device === "tv" ? supportQr() : supportButton();
+var storeGet = (k) => {
+  try {
+    return globalThis.kino && kino.storage && typeof kino.storage.get === "function" ? kino.storage.get(k) : null;
+  } catch {
+    return null;
+  }
+};
+var storeSet = (k, v) => {
+  try {
+    if (globalThis.kino && kino.storage && typeof kino.storage.set === "function") kino.storage.set(k, v);
+  } catch {
+  }
+};
 var heroCard = (item) => {
   const h = { type: "heroCard", key: "hero", title: String(item.title), titleEn: String(item.title) };
   const img = item.backdrop || item.poster;
@@ -32,8 +45,11 @@ var homeAppBar = (active) => ({
   key: "bar",
   mergeWithKinoBar: true,
   dense: true,
-  leading: { type: "IconButton", key: "settings", icon: "settings", labelText: "Ajustes", labelTextEn: "Settings", onPressed: "toggleSettings" },
-  actions: [{ type: "IconButton", key: "search", icon: "search", labelText: "Buscar", labelTextEn: "Search", onPressed: "toggleSearch" }],
+  leading: { type: "IconButton", key: "close", icon: "arrow_back", labelText: "Salir", labelTextEn: "Exit", onPressed: { go: { close: true } } },
+  actions: [
+    { type: "IconButton", key: "search", icon: "search", labelText: "Buscar", labelTextEn: "Search", onPressed: "toggleSearch" },
+    { type: "IconButton", key: "settings", icon: "settings", labelText: "Ajustes", labelTextEn: "Settings", onPressed: "toggleSettings" }
+  ],
   bottom: tabBar(active)
 });
 function welcomeScreen(name, installed, device) {
@@ -180,7 +196,7 @@ function channel(site) {
       const fromSettings = !!(ctx && ctx.args && ctx.args.from === "settings");
       if (!installed) return welcomeScreen(name, false, device);
       if (fromSettings || state.mode === "settings") return settingsScreen(name, device);
-      if (!state.entered) return welcomeScreen(name, true, device);
+      if (!(state.entered === true || storeGet("seen") === "1")) return welcomeScreen(name, true, device);
       if (state.mode === "search") return searchScreen(name, state);
       const active = state.tab || "movie";
       return homeScreen(name, active, await loadCatalog(active));
@@ -189,7 +205,10 @@ function channel(site) {
       const { name: ev, value, arg, installed, state } = ctx || {};
       const base = { entered: true, tab: state && state.tab || "movie" };
       if (ev === "install") return { go: { installPlugin: { repo: RESOLVER_REPO } } };
-      if (ev === "enter") return { state: base };
+      if (ev === "enter") {
+        storeSet("seen", "1");
+        return { state: base };
+      }
       if (ev === "tab") return { state: { ...base, tab: (value !== void 0 ? value : arg) || "movie" } };
       if (ev === "toggleSettings") return { state: { ...base, mode: "settings" } };
       if (ev === "closeSettings") return { state: { ...base, mode: null } };
