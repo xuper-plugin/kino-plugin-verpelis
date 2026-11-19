@@ -18,12 +18,19 @@ function slug(url) {
 var supportButton = () => ({ type: "ElevatedButton", key: "support", labelText: "Contribuir con una donación", labelTextEn: "Contribute with a donation", onPressed: { go: { url: { href: SUPPORT_URL, title: "Apóyanos en Ko-fi" } } } });
 var supportQr = () => ({ type: "QrImage", key: "supportQr", value: SUPPORT_URL, size: "large", labelText: "Escanea con tu celular para apoyarnos en Ko-fi", labelTextEn: "Scan with your phone to support us on Ko-fi" });
 var support = (device) => device === "tv" ? supportQr() : supportButton();
-var heroCard = (item) => {
-  const h = { type: "heroCard", key: "hero", title: String(item.title), titleEn: String(item.title) };
+var HERO_H = { compact: 220, expanded: 300 };
+var heroSlide = (item) => {
+  const s = { type: "heroCard", key: "slide-" + item.id, h: HERO_H, title: String(item.title), titleEn: String(item.title) };
   const img = item.backdrop || item.poster;
-  if (img) h.image = img;
-  h.buttons = [{ type: "ElevatedButton", key: "heroPlay", labelText: "Ver", labelTextEn: "Watch", onPressed: { event: "play", arg: item.ref } }];
-  return h;
+  if (img) s.image = img;
+  s.buttons = [{ type: "ElevatedButton", key: "play-" + item.id, labelText: "Ver", labelTextEn: "Watch", onPressed: { event: "play", arg: item.ref } }];
+  return s;
+};
+var heroSlider = (items, active) => {
+  const slides = items.slice(0, 6).map(heroSlide);
+  if (!slides.length) return null;
+  if (slides.length === 1) return slides[0];
+  return { type: "PageView", key: "hero-" + active + "-" + slides.length, autoPlayMs: 6e3, children: slides };
 };
 var rail = (title, items) => ({ type: "titleRail", key: "rail-" + slug(title), title, titleEn: title, items });
 var tabBar = (active) => ({ type: "TabBar", key: "tabs", value: active, onChanged: "tab", tabs: TABS.map((t) => ({ key: t.key, label: t.es, labelEn: t.en })) });
@@ -61,7 +68,7 @@ function settingsScreen(name, device) {
 }
 function homeScreen(name, active, rows) {
   const featured = rows.length && rows[0].items.length ? rows[0].items : [];
-  const hero = featured.length ? heroCard(featured[0]) : null;
+  const hero = heroSlider(featured, active);
   const rails = rows.map((r) => rail(r.title, r.items));
   const rowsNode = { type: "Column", key: "rows-" + active, padding: 16, gap: 16, children: rails.length ? rails : [{ type: "Text", key: "empty", text: "No se pudo cargar el catálogo. Usa la lupa para buscar.", textEn: "Couldn't load the catalogue. Use search instead.", color: "secondary" }] };
   const body = { type: "SingleChildScrollView", key: "home-" + active, children: [...hero ? [hero] : [], rowsNode] };
