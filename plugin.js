@@ -146,31 +146,12 @@ function channel(site) {
       if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: "Sin enlaces disponibles" });
       const streams = [];
       const seen = /* @__PURE__ */ new Set();
-      for (const e of embeds) {
-        let got = [];
-        try {
-          const res = await kino.plugins.call("resolver", "resolve", { url: e.url, referer: site.HOST });
-          got = res && res.streams || [];
-        } catch {
-          got = [];
-        }
-        if (!got.length && globalThis.kino && kino.browser && typeof kino.browser.capture === "function") {
-          try {
-            const cap = await kino.browser.capture(e.url, { headers: { Referer: site.HOST }, timeoutMs: 18e3 });
-            got = (cap && cap.media || []).map((mm) => ({
-              url: mm.url,
-              server: "browser",
-              kind: /\.m3u8(\?|$)/i.test(mm.url) ? "hls" : /\.mpd(\?|$)/i.test(mm.url) ? "dash" : "mp4",
-              headers: Object.entries(mm.headers || {}).filter(([, v]) => v != null).map(([name2, value]) => ({ name: name2, value: String(value) }))
-            }));
-          } catch {
-          }
-        }
+      const collect = (got, lang) => {
         for (const s of got) {
           if (!s.url || seen.has(s.url)) continue;
           seen.add(s.url);
           const stream = { url: s.url };
-          const label = ((LANG[e.lang] || e.lang || "") + (s.server ? " · " + s.server : "")).trim().slice(0, 48);
+          const label = ((LANG[lang] || lang || "") + (s.server ? " · " + s.server : "")).trim().slice(0, 48);
           if (label) stream.label = label;
           if (s.mime) stream.mime = s.mime;
           const hdrs = {};
@@ -178,6 +159,31 @@ function channel(site) {
           if (s.referer && !hdrs.Referer) hdrs.Referer = s.referer;
           if (Object.keys(hdrs).length) stream.headers = hdrs;
           streams.push(stream);
+        }
+      };
+      const needBrowser = [];
+      for (const e of embeds) {
+        try {
+          const res = await kino.plugins.call("resolver", "resolve", { url: e.url, referer: site.HOST });
+          const got = res && res.streams || [];
+          collect(got, e.lang);
+          if (!got.length && res && res.error === "needs_browser") needBrowser.push(e);
+        } catch {
+          needBrowser.push(e);
+        }
+      }
+      if (!streams.length && needBrowser.length && globalThis.kino && kino.browser && typeof kino.browser.capture === "function") {
+        for (const e of needBrowser) {
+          try {
+            const cap = await kino.browser.capture(e.url, { headers: { Referer: site.HOST }, timeoutMs: 18e3 });
+            collect((cap && cap.media || []).map((mm) => ({
+              url: mm.url,
+              server: "browser",
+              headers: Object.entries(mm.headers || {}).filter(([, v]) => v != null).map(([name2, value]) => ({ name: name2, value: String(value) }))
+            })), e.lang);
+          } catch {
+          }
+          if (streams.length) break;
         }
       }
       if (!streams.length) throw kino.error("not_found", "no playable streams", { userMessage: "No se pudo resolver el video" });
