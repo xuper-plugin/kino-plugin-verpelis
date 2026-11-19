@@ -34,7 +34,7 @@ var homeAppBar = (active) => ({
   dense: true,
   leading: { type: "IconButton", key: "close", icon: "arrow_back", labelText: "Salir", labelTextEn: "Exit", onPressed: { go: { close: true } } },
   actions: [
-    { type: "IconButton", key: "search", icon: "search", labelText: "Buscar", labelTextEn: "Search", onPressed: "toggleSearch" },
+    { type: "IconButton", key: "search", icon: "search", labelText: "Buscar", labelTextEn: "Search", onPressed: { go: { search: { q: "" } } } },
     { type: "IconButton", key: "settings", icon: "settings", labelText: "Ajustes", labelTextEn: "Settings", onPressed: "toggleSettings" }
   ],
   bottom: tabBar(active)
@@ -47,18 +47,6 @@ function welcomeScreen(name, device) {
     support(device)
   ];
   return { type: "Scaffold", key: "app", body: { type: "SingleChildScrollView", key: "welcome", children: [{ type: "Column", padding: 24, gap: 16, crossAxisAlignment: "stretch", children }] } };
-}
-function searchScreen(name, state) {
-  const q = state && state.q || "";
-  const results = state && state.results || [];
-  const appBar = { type: "AppBar", key: "bar", mergeWithKinoBar: true, dense: true, title: "Buscar", titleEn: "Search", leading: { type: "IconButton", key: "back", icon: "arrow_back", labelText: "Atrás", labelTextEn: "Back", onPressed: "toggleSearch" } };
-  const children = [{ type: "Form", key: "searchForm", onSubmitted: "search", gap: 12, children: [
-    { type: "TextField", key: "q", labelText: "Buscar en " + name, labelTextEn: "Search " + name, value: q, maxLength: 120 },
-    { type: "ElevatedButton", labelText: "Buscar", labelTextEn: "Search", submit: true }
-  ] }];
-  if (results.length) children.push({ type: "titleGrid", key: "results", items: results });
-  else if (q) children.push({ type: "Text", key: "empty", text: "Sin resultados", textEn: "No results", color: "secondary" });
-  return { type: "Scaffold", key: "app", appBar, body: { type: "SingleChildScrollView", key: "searchPage", children: [{ type: "Column", padding: 16, gap: 16, crossAxisAlignment: "stretch", children }] } };
 }
 function settingsScreen(name, device) {
   const appBar = { type: "AppBar", key: "bar", mergeWithKinoBar: true, dense: true, title: "Ajustes", titleEn: "Settings", leading: { type: "IconButton", key: "back", icon: "arrow_back", labelText: "Atrás", labelTextEn: "Back", onPressed: "closeSettings" } };
@@ -171,7 +159,8 @@ function channel(site) {
       if (rest.length) main.alternatives = rest.slice(0, 8);
       return main;
     },
-    // ---- welcome gate -> tabbed Home + search + settings ----
+    // ---- welcome gate -> tabbed Home + settings. The search icon opens Kino's NATIVE search scoped to
+    //      this plugin (go.search); Kino then calls this plugin's `search(query)` export. ----
     async screen(ctx) {
       const installed = hasResolver(ctx);
       const state = ctx && ctx.state || {};
@@ -179,26 +168,19 @@ function channel(site) {
       const fromSettings = !!(ctx && ctx.args && ctx.args.from === "settings");
       if (!installed) return welcomeScreen(name, device);
       if (fromSettings || state.mode === "settings") return settingsScreen(name, device);
-      if (state.mode === "search") return searchScreen(name, state);
       const active = state.tab || "movie";
       return homeScreen(name, active, await loadCatalog(active));
     },
     async screenEvent(ctx) {
-      const { name: ev, value, arg, installed, state } = ctx || {};
+      const { name: ev, value, arg, state } = ctx || {};
       const base = { tab: state && state.tab || "movie" };
       if (ev === "install") return { go: { installPlugin: { repo: RESOLVER_REPO } } };
       if (ev === "tab") return { state: { ...base, tab: (value !== void 0 ? value : arg) || "movie" } };
       if (ev === "toggleSettings") return { state: { ...base, mode: "settings" } };
       if (ev === "closeSettings") return { state: { ...base, mode: null } };
-      if (ev === "toggleSearch") return { state: { ...base, mode: state && state.mode === "search" ? null : "search" } };
       if (ev === "play") {
         const ref = String(arg || "");
         return ref ? { go: { title: { ref, kind: ref[0] === "s" ? "series" : "movie" } } } : null;
-      }
-      if (ev === "search") {
-        if (!(installed && installed[RESOLVER_REPO])) return { toast: "Primero instala Kino Resolver", toastEn: "Install Kino Resolver first" };
-        const q = value && typeof value.q === "string" ? value.q.trim() : "";
-        return { state: { ...base, mode: "search", q, results: q ? await doSearch(q) : [] } };
       }
       return null;
     }
