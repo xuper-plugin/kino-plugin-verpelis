@@ -1,7 +1,7 @@
 {
   "id": "verpelis",
   "name": "VerPelis",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "apiVersion": 20,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -21,7 +21,7 @@
     "episodes",
     "screen"
   ],
-  "screen": { "label": "VerPelis", "labelEn": "VerPelis", "icon": "movie", "menuOpens": "screen", "opensFrom": ["menu", "settings"], "settingsIn": "screen", "settingsButton": { "label": "Ajustes de VerPelis", "labelEn": "VerPelis settings" } },
+  "screen": { "label": "VerPelis", "labelEn": "VerPelis", "icon": "movie", "menuOpens": "screen", "opensFrom": ["menu", "settings"], "settingsIn": "screen", "settingsButton": { "label": "Abrir VerPelis", "labelEn": "Open VerPelis" } },
   "consumes": {
     "resolver": {
       "repo": "xuper-plugin/kino-plugin-kino-resolver",

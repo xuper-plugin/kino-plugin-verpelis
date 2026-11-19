@@ -192,9 +192,8 @@ function channel(site) {
       const installed = hasResolver(ctx);
       const state = ctx && ctx.state || {};
       const device = ctx && ctx.device || "phone";
-      const fromSettings = !!(ctx && ctx.args && ctx.args.from === "settings");
       if (!installed) return welcomeScreen(name, device);
-      if (fromSettings || state.mode === "settings") return settingsScreen(name, device);
+      if (state.mode === "settings") return settingsScreen(name, device);
       const active = state.tab || "movie";
       return homeScreen(name, active, await loadCatalog(active));
     },
