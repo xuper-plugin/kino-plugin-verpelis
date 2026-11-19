@@ -34,6 +34,26 @@ var heroSlider = (items, active) => {
 };
 var rail = (title, items) => ({ type: "titleRail", key: "rail-" + slug(title), title, titleEn: title, items });
 var tabBar = (active) => ({ type: "TabBar", key: "tabs", value: active, onChanged: "tab", tabs: TABS.map((t) => ({ key: t.key, label: t.es, labelEn: t.en })) });
+var SEARCH_FIELD = "sq";
+var searchSheet = (name) => ({
+  type: "BottomSheet",
+  key: "searchSheet",
+  title: "Buscar en " + name,
+  titleEn: "Search " + name,
+  children: [{
+    type: "TextField",
+    key: SEARCH_FIELD,
+    kind: "search",
+    maxLength: 200,
+    labelText: "Películas y series",
+    labelTextEn: "Movies and series",
+    trailingIcon: "search",
+    trailingLabel: "Buscar",
+    trailingLabelEn: "Search",
+    onSubmitted: { event: "search" },
+    onTrailingTap: { event: "search" }
+  }]
+});
 var homeAppBar = (active) => ({
   type: "AppBar",
   key: "bar",
@@ -41,7 +61,7 @@ var homeAppBar = (active) => ({
   dense: true,
   leading: { type: "IconButton", key: "close", icon: "arrow_back", labelText: "Salir", labelTextEn: "Exit", onPressed: { go: { close: true } } },
   actions: [
-    { type: "IconButton", key: "search", icon: "search", labelText: "Buscar", labelTextEn: "Search", onPressed: { go: { search: { q: "" } } } },
+    { type: "IconButton", key: "search", icon: "search", labelText: "Buscar", labelTextEn: "Search", onPressed: { ui: [{ open: "searchSheet" }] } },
     { type: "IconButton", key: "settings", icon: "settings", labelText: "Ajustes", labelTextEn: "Settings", onPressed: "toggleSettings" }
   ],
   bottom: tabBar(active)
@@ -71,7 +91,7 @@ function homeScreen(name, active, rows) {
   const hero = heroSlider(featured, active);
   const rails = rows.map((r) => rail(r.title, r.items));
   const rowsNode = { type: "Column", key: "rows-" + active, padding: 16, gap: 16, children: rails.length ? rails : [{ type: "Text", key: "empty", text: "No se pudo cargar el catálogo. Usa la lupa para buscar.", textEn: "Couldn't load the catalogue. Use search instead.", color: "secondary" }] };
-  const body = { type: "SingleChildScrollView", key: "home-" + active, children: [...hero ? [hero] : [], rowsNode] };
+  const body = { type: "SingleChildScrollView", key: "home-" + active, children: [...hero ? [hero] : [], rowsNode, searchSheet(name)] };
   return { type: "Scaffold", key: "app", appBar: homeAppBar(active), body };
 }
 function channel(site) {
@@ -188,6 +208,11 @@ function channel(site) {
       if (ev === "play") {
         const ref = String(arg || "");
         return ref ? { go: { title: { ref, kind: ref[0] === "s" ? "series" : "movie" } } } : null;
+      }
+      if (ev === "search") {
+        const typed = [value, state && state.inputs && state.inputs[SEARCH_FIELD]].find((x) => (typeof x === "string" || typeof x === "number") && String(x).trim());
+        const q = String(typed == null ? "" : typed).trim().slice(0, 200);
+        return q ? { go: { search: { q } }, ui: [{ close: "searchSheet" }] } : {};
       }
       return null;
     }
