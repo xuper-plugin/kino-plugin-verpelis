@@ -15,10 +15,45 @@ function slug(url) {
   const last = String(url).replace(/\/+$/, "").split("/").pop() || "x";
   return last.replace(/[^A-Za-z0-9._~-]/g, "-").slice(0, 120) || "x";
 }
+var STATS_KEY = "srvStats";
+var STATS_CAP = 24;
+function readStats() {
+  try {
+    return JSON.parse(kino.storage && kino.storage.get(STATS_KEY) || "{}") || {};
+  } catch (_) {
+    return {};
+  }
+}
+function hostOf(u) {
+  try {
+    return new URL(u).hostname.replace(/^www\./, "");
+  } catch (_) {
+    return "";
+  }
+}
+function scoreOf(id, stats) {
+  const s = stats[id] || { ok: 0, fail: 0 };
+  return (s.ok + 1) / (s.ok + s.fail + 2);
+}
+function noteServer(id, ok) {
+  if (!id) return;
+  try {
+    const stats = readStats();
+    const s = stats[id] || { ok: 0, fail: 0 };
+    s[ok ? "ok" : "fail"] += 1;
+    if (s.ok + s.fail > STATS_CAP) {
+      s.ok = Math.round(s.ok / 2);
+      s.fail = Math.round(s.fail / 2);
+    }
+    stats[id] = s;
+    if (kino.storage) kino.storage.set(STATS_KEY, JSON.stringify(stats));
+  } catch (_) {
+  }
+}
 var supportButton = () => ({ type: "ElevatedButton", key: "support", labelText: "Contribuir con una donación", labelTextEn: "Contribute with a donation", onPressed: { go: { url: { href: SUPPORT_URL, title: "Apóyanos en Ko-fi" } } } });
 var supportQr = () => ({ type: "QrImage", key: "supportQr", value: SUPPORT_URL, size: "large", labelText: "Escanea con tu celular para apoyarnos en Ko-fi", labelTextEn: "Scan with your phone to support us on Ko-fi" });
 var support = (device) => device === "tv" ? supportQr() : supportButton();
-var HERO_H = { compact: 220, expanded: 300 };
+var HERO_H = { compact: 240, expanded: 320 };
 var heroSlide = (item) => {
   const s = { type: "heroCard", key: "slide-" + item.id, h: HERO_H, title: String(item.title), titleEn: String(item.title) };
   const img = item.backdrop || item.poster;
@@ -33,7 +68,7 @@ var heroSlider = (items, active) => {
   return { type: "PageView", key: "hero-" + active + "-" + slides.length, autoPlayMs: 6e3, children: slides };
 };
 var rail = (title, items) => ({ type: "titleRail", key: "rail-" + slug(title), title, titleEn: title, items });
-var tabBar = (active) => ({ type: "TabBar", key: "tabs", value: active, onChanged: "tab", tabs: TABS.map((t) => ({ key: t.key, label: t.es, labelEn: t.en })) });
+var tabBar = (active) => ({ type: "TabBar", key: "tabs", value: active, onChanged: "tab", tabs: TABS.map((t) => ({ value: t.key, label: t.es, labelEn: t.en })) });
 var SEARCH_FIELD = "sq";
 var searchSheet = (name) => ({
   type: "BottomSheet",
@@ -143,8 +178,12 @@ function channel(site) {
       const m = /^([mes])\|(.+)$/.exec(String(ref));
       if (!m) throw kino.error("not_found", "bad ref: " + String(ref).slice(0, 80));
       let resolverUp = true;
-      try { await kino.plugins.call("resolver", "normalizeHost", { url: "https://probe.invalid/" }); } catch (err) { resolverUp = (err && err.code) !== "provider_missing"; }
-      if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: "Para reproducir, abre Verpelis desde el menú e instala el motor de reproducción que te pedirá." });
+      try {
+        await kino.plugins.call("resolver", "normalizeHost", { url: "https://probe.invalid/" });
+      } catch (err) {
+        resolverUp = (err && err.code) !== "provider_missing";
+      }
+      if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: "Para reproducir, abre " + name + " desde el menú e instala el motor de reproducción que te pedirá." });
       const embeds = await site.findvideos(m[2]);
       if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: "Sin enlaces disponibles" });
       const streams = [];
@@ -165,13 +204,17 @@ function channel(site) {
         }
       };
       const needBrowser = [];
-      for (const e of embeds) {
+      const stats = readStats();
+      const ordered = embeds.map((e, i) => ({ e, i })).sort((a, b) => scoreOf(hostOf(b.e.url), stats) - scoreOf(hostOf(a.e.url), stats) || a.i - b.i).map((x) => x.e);
+      for (const e of ordered) {
         try {
           const res = await kino.plugins.call("resolver", "resolve", { url: e.url, referer: site.HOST });
           const got = res && res.streams || [];
           collect(got, e.lang);
+          noteServer(hostOf(e.url), got.length > 0);
           if (!got.length && res && res.error === "needs_browser") needBrowser.push(e);
         } catch {
+          noteServer(hostOf(e.url), false);
           needBrowser.push(e);
         }
       }
