@@ -142,6 +142,9 @@ function channel(site) {
     async resolve(ref) {
       const m = /^([mes])\|(.+)$/.exec(String(ref));
       if (!m) throw kino.error("not_found", "bad ref: " + String(ref).slice(0, 80));
+      let resolverUp = true;
+      try { await kino.plugins.call("resolver", "normalizeHost", { url: "https://probe.invalid/" }); } catch (err) { resolverUp = (err && err.code) !== "provider_missing"; }
+      if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: "Para reproducir, abre Verpelis desde el menú e instala el motor de reproducción que te pedirá." });
       const embeds = await site.findvideos(m[2]);
       if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: "Sin enlaces disponibles" });
       const streams = [];
