@@ -1,7 +1,7 @@
 {
   "id": "verpelis",
   "name": "VerPelis",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "apiVersion": 20,
   "entry": "plugin.js",
   "icon": "icon.png",

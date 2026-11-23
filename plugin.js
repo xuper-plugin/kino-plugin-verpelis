@@ -420,24 +420,37 @@ async function catalog(kind) {
   for (const r of genreRows) if (r) rows.push(r);
   return rows;
 }
+async function embedOf(url, dpost, dtype, dnume) {
+  try {
+    const d1 = await dl(HOST + "wp-json/dooplayer/v2/" + dpost + "/" + dtype + "/" + dnume, null, { Referer: url });
+    const embed = single(d1, '"embed_url":"(.*?)"');
+    if (embed) return embed;
+  } catch {
+  }
+  try {
+    const d2 = await dl(HOST + "wp-json/dooplayer/v2/", { action: "doo_player_ajax", post: dpost, nume: dnume, type: dtype }, { Referer: url });
+    return single(d2, '"embed_url":"(.*?)"') || null;
+  } catch {
+    return null;
+  }
+}
 async function findvideos(url) {
   const data = await dl(url);
-  const out = [];
+  const options = [];
   for (const option of multi(data, "<li id='player-option-(.*?)</li>")) {
     const dpost = single(option, " data-post='(.*?)'");
     const dtype = single(option, " data-type='(.*?)'");
     const dnume = single(option, " data-nume='(.*?)'");
     if (!dpost || !dtype || !dnume || dnume === "trailer") continue;
-    let d1 = await dl(HOST + "wp-json/dooplayer/v2/", { action: "doo_player_ajax", post: dpost, nume: dnume, type: dtype }, { Referer: url });
-    let embed = single(d1, '"embed_url":"(.*?)"');
-    if (!embed) {
-      d1 = await dl(HOST + "wp-json/dooplayer/v2/" + dpost + "/" + dtype + "/" + dnume, null, { Referer: url });
-      embed = single(d1, '"embed_url":"(.*?)"');
-      if (!embed) continue;
-    }
-    const lang = option.includes("mx.png") ? "Lat" : option.includes("es.png") ? "Esp" : option.includes("vose.png") ? "Vose" : "?";
-    out.push({ url: embed.replaceAll("\\/", "/"), lang });
+    options.push({ option, dpost, dtype, dnume });
   }
+  const embeds = await Promise.all(options.map((o) => embedOf(url, o.dpost, o.dtype, o.dnume)));
+  const out = [];
+  options.forEach((o, i) => {
+    if (!embeds[i]) return;
+    const lang = o.option.includes("mx.png") ? "Lat" : o.option.includes("es.png") ? "Esp" : o.option.includes("vose.png") ? "Vose" : "?";
+    out.push({ url: embeds[i].replaceAll("\\/", "/"), lang });
+  });
   return out;
 }
 
