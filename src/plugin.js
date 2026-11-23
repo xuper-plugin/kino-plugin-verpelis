@@ -14,7 +14,7 @@ export const resolve = ch.resolve;
 // VerPelis plays nothing on its own: every hoster goes through kino-resolver (resolve() refuses while it is missing), so
 // the screen is the install gate until it is installed.
 let std = null;
-const standard = () => (std ??= makeStandardScreen({
+const standard = () => (std ??= makeStandardScreen({ snapshot: "xuper-plugin/kino-plugin-verpelis",
   kino: globalThis.kino, name: "VerPelis", logo: LOGO, logoAspect: LOGO_ASPECT, needsResolver: true, hasSettings: false,
   tabs: [
     { id: "movie", label: "Películas", labelEn: "Movies" },
