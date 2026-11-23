@@ -39,6 +39,9 @@ function noteServer(id, ok) {
   } catch (_) { /* the stats are a nicety */ }
 }
 
+/** A message for the person in their language: Spanish when Kino's language is Spanish, else English. */
+const say = (es, en) => (String((globalThis.kino && kino.lang) || "").toLowerCase().startsWith("es") ? es : en);
+
 export function channel(site) {
   const name = site.NAME || "este sitio";
 
@@ -79,7 +82,7 @@ export function channel(site) {
           eps.push(ep);
         }
       }
-      if (!eps.length) throw kino.error("not_found", "no episodes", { userMessage: "No hay episodios disponibles" });
+      if (!eps.length) throw kino.error("not_found", "no episodes", { userMessage: say("No hay episodios disponibles", "No episodes available") });
       return { episodes: eps };
     },
 
@@ -90,9 +93,9 @@ export function channel(site) {
       // person to the screen to install it (the probe is provider_missing only when it is truly absent).
       let resolverUp = true;
       try { await kino.plugins.call("resolver", "normalizeHost", { url: "https://probe.invalid/" }); } catch (err) { resolverUp = (err && err.code) !== "provider_missing"; }
-      if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: "Para reproducir, abre " + name + " desde el menú e instala el motor de reproducción que te pedirá." });
+      if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: say("Para reproducir, abre " + name + " desde el menú e instala el motor de reproducción que te pedirá.", "To play, open " + name + " from the menu and install the playback engine it asks for.") });
       const embeds = await site.findvideos(m[2]);
-      if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: "Sin enlaces disponibles" });
+      if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: say("Sin enlaces disponibles", "No links available") });
       const streams = [];
       const seen = new Set();
       const collect = (got, lang) => {
@@ -143,7 +146,7 @@ export function channel(site) {
           if (streams.length) break;
         }
       }
-      if (!streams.length) throw kino.error("not_found", "no playable streams", { userMessage: "No se pudo resolver el video" });
+      if (!streams.length) throw kino.error("not_found", "no playable streams", { userMessage: say("No se pudo resolver el video", "The video could not be opened") });
       const [first, ...rest] = streams;
       const main = { ...first, expiresInSeconds: 1800 };
       if (rest.length) main.alternatives = rest.slice(0, 8);

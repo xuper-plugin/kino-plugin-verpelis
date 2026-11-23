@@ -47,6 +47,7 @@ function noteServer(id, ok) {
   } catch (_) {
   }
 }
+var say = (es, en) => String(globalThis.kino && kino.lang || "").toLowerCase().startsWith("es") ? es : en;
 function channel(site) {
   const name = site.NAME || "este sitio";
   function mapItem(it) {
@@ -88,7 +89,7 @@ function channel(site) {
           eps.push(ep);
         }
       }
-      if (!eps.length) throw kino.error("not_found", "no episodes", { userMessage: "No hay episodios disponibles" });
+      if (!eps.length) throw kino.error("not_found", "no episodes", { userMessage: say("No hay episodios disponibles", "No episodes available") });
       return { episodes: eps };
     },
     async resolve(ref) {
@@ -100,9 +101,9 @@ function channel(site) {
       } catch (err) {
         resolverUp = (err && err.code) !== "provider_missing";
       }
-      if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: "Para reproducir, abre " + name + " desde el menú e instala el motor de reproducción que te pedirá." });
+      if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: say("Para reproducir, abre " + name + " desde el menú e instala el motor de reproducción que te pedirá.", "To play, open " + name + " from the menu and install the playback engine it asks for.") });
       const embeds = await site.findvideos(m[2]);
-      if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: "Sin enlaces disponibles" });
+      if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: say("Sin enlaces disponibles", "No links available") });
       const streams = [];
       const seen = /* @__PURE__ */ new Set();
       const collect = (got, lang) => {
@@ -149,7 +150,7 @@ function channel(site) {
           if (streams.length) break;
         }
       }
-      if (!streams.length) throw kino.error("not_found", "no playable streams", { userMessage: "No se pudo resolver el video" });
+      if (!streams.length) throw kino.error("not_found", "no playable streams", { userMessage: say("No se pudo resolver el video", "The video could not be opened") });
       const [first, ...rest] = streams;
       const main = { ...first, expiresInSeconds: 1800 };
       if (rest.length) main.alternatives = rest.slice(0, 8);
@@ -390,6 +391,7 @@ function railsOf(rows) {
   return rows.filter((r) => !r.hidden && r.items && r.items.length > 0).slice(0, MAX_RAILS).map((r) => ({
     id: r.id,
     title: r.title,
+    ...r.titleEn ? { titleEn: r.titleEn } : {},
     ...r.ref ? { ref: r.ref } : {},
     items: uniform(r.items.slice(0, MAX_RAIL_ITEMS).map(cardOf))
   }));
@@ -547,7 +549,7 @@ var rail = (r, key, words, headers) => ({
   items: r.items,
   ...withHeaders(headers)
 });
-function browseView(cfg, { tab, data, recent, pending, failed, device = "phone" }) {
+function browseView(cfg, { tab, data, recent, pending, failed, searching = false, device = "phone" }) {
   const tv = device === "tv";
   const tabs = cfg.tabs;
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
@@ -570,13 +572,14 @@ function browseView(cfg, { tab, data, recent, pending, failed, device = "phone" 
   const appBar = bar({
     leading: iconButton("close", "close", "close", { go: { close: true } }),
     title: { type: "Row", key: "titleRow", gap: tabsInBar ? 24 : 8, crossAxisAlignment: "center", children: [
-      { ...iconButton("closeSearch", "arrow_back", "back", { ui: searchClosedOps(tabsInBar) }), hidden: true },
-      brand(cfg),
-      ...tabsInBar ? [tabBar(tabs, active)] : [],
+      { ...iconButton("closeSearch", "arrow_back", "back", { ui: searchClosedOps(tabsInBar), event: "closeSearch" }), hidden: !searching },
+      { ...brand(cfg), hidden: searching },
+      ...tabsInBar ? [{ ...tabBar(tabs, active), hidden: searching }] : [],
       {
         type: "TextField",
         key: "q",
-        hidden: true,
+        hidden: !searching,
+        ...searching ? { autofocus: true } : {},
         flex: 1,
         kind: "search",
         maxLength: 200,
@@ -588,8 +591,8 @@ function browseView(cfg, { tab, data, recent, pending, failed, device = "phone" 
       }
     ] },
     actions: [
-      iconButton("searchButton", "search", "search", { ui: searchOpenOps(tabsInBar) }),
-      iconButton("settingsButton", "settings", "settings", "openSettings")
+      { ...iconButton("searchButton", "search", "search", { ui: searchOpenOps(tabsInBar), event: "searchRoute" }), hidden: searching },
+      { ...iconButton("settingsButton", "settings", "settings", "openSettings"), hidden: searching }
     ]
   });
   return {
@@ -724,10 +727,14 @@ var TAB_KEY = "browseTab";
 var SNAP_PREFIX = "browse1:";
 var SNAP_TTL_MS = 7 * 24 * 3600 * 1e3;
 var SNAP_MAX = 20 * 1024;
+var SNAPS_TOTAL = 96 * 1024;
 var RECENT_KEY = "recent1";
 var RECENT_MAX = 12;
 var Q_MAX = 200;
 var META_TICK_MS = 3e3;
+var META_TICK_CARDS = 24;
+var INFLIGHT_KEY = "std:inflight";
+var INFLIGHT_STALE_MS = 18e3;
 var MAX_META_TICKS = 10;
 var DEFAULT_TABS = [{ id: "inicio", label: "Inicio", labelEn: "Home" }];
 function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect = "1:1", needsResolver, hasSettings, tabs, loadTab, homeKey = null, titleOf: titleOf2, typeOf, tmdbPictures = false, imageHeaders = null }) {
@@ -789,11 +796,12 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
       return null;
     }
   }
+  const snapMax = Math.min(SNAP_MAX, Math.floor(SNAPS_TOTAL / TAB_IDS.length));
   function writeSnap(tab, data) {
     for (let per = 10; per >= 3; per -= 2) {
       const slim = { slides: data.slides, posterSlides: data.posterSlides || [], rails: data.rails.map((r) => ({ ...r, items: r.items.slice(0, per) })) };
       const text = JSON.stringify({ at: Date.now(), data: slim });
-      if (text.length <= SNAP_MAX) {
+      if (text.length <= snapMax) {
         set(SNAP_PREFIX + tab, text, { ttlMs: SNAP_TTL_MS });
         return;
       }
@@ -856,10 +864,32 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     const data = enrich(dataOf(tab));
     const loaded = TAB_IDS.map((t) => memo.get(t)).filter(Boolean).map((m) => m.data);
     const pending = Array.isArray(st.pending) && st.pending.length > 0;
-    return browseView(cfg, { tab, data, recent: meta.dress(recentOf(readKeys(), loaded)), pending, failed: !!(st.failed && st.failed[tab]), device });
+    const searching = !!(c.route && c.route.name === "search");
+    return browseView(cfg, { tab, data, recent: meta.dress(recentOf(readKeys(), loaded)), pending, failed: !!(st.failed && st.failed[tab]), searching, device });
+  }
+  function cutShort() {
+    try {
+      const o = JSON.parse(get(INFLIGHT_KEY) || "null");
+      if (!o || typeof o.tab !== "string") return null;
+      if (Date.now() - Number(o.at) < INFLIGHT_STALE_MS) return null;
+      kino2.storage.remove(INFLIGHT_KEY);
+      return o.tab;
+    } catch (_) {
+      return null;
+    }
   }
   async function load(tab) {
-    const data = tabOf(await loadTab(tab));
+    set(INFLIGHT_KEY, JSON.stringify({ tab, at: Date.now() }));
+    let page;
+    try {
+      page = await loadTab(tab);
+    } finally {
+      try {
+        kino2.storage.remove(INFLIGHT_KEY);
+      } catch (_) {
+      }
+    }
+    const data = tabOf(page);
     if (data) {
       memo.set(tab, { data, whole: true });
       writeSnap(tab, data);
@@ -897,12 +927,17 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
         if (!m) return { state: { pending: rest } };
         const ask = (x) => ({ id: x.id, title: x.title, kind: x.kind, ...x.year !== void 0 ? { year: x.year } : {} });
         const noOwnSlides = m.data.slides.length === 0;
-        const cards = [...m.data.slides.map(ask), ...m.data.rails.flatMap((r) => r.items.slice(0, noOwnSlides ? MAX_SLIDES * 3 : 6).map(ask))];
+        const cards = [...m.data.slides.map(ask), ...m.data.rails.flatMap((r) => r.items.slice(0, noOwnSlides ? MAX_SLIDES * 3 : 6).map(ask))].filter((c) => !meta.asked(c.id)).slice(0, META_TICK_CARDS);
         const count = await meta.fill(cards, META_TICK_MS);
         const ticks = (metaTicks.get(tab) || 0) + 1;
         metaTicks.set(tab, ticks);
         const again = noOwnSlides && count > 0 && ticks < MAX_META_TICKS && slidesFromMeta(m.data.rails).length < MAX_SLIDES && cards.some((c) => !meta.asked(c.id));
         return { state: { pending: again ? [next, ...rest] : rest } };
+      }
+      if (cutShort() === next) {
+        log("tab", next, "cut short by Kino last time");
+        failed[next] = true;
+        return { state: { pending: rest, failed } };
       }
       try {
         const ok = await load(next);
@@ -916,11 +951,20 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
       return { state: { pending: rest, failed } };
     },
     // The words go to Kino's own search, with this plugin as the source; the bar is put back as it was, locally.
-    search({ value, state, device }) {
+    // The search button's own event (after its local ops): the "search" route, so Kino's Back pops it instead of closing the
+    // screen. The local ops are dropped with it: the route's tree draws the box, and after a pop the main tree's defaults hold.
+    searchRoute({ route }) {
+      return route && route.name === "search" ? null : { route: { push: "search" }, state: { ui: null } };
+    },
+    closeSearch({ route }) {
+      return route && route.name === "search" ? { route: { pop: true }, state: { ui: null } } : { state: { ui: null } };
+    },
+    search({ value, state, device, route }) {
       const typed = value && typeof value === "object" ? value.q : value;
       const raw = typed != null && String(typed).trim() !== "" ? typed : state.inputs && state.inputs.q;
       const q = String(raw == null ? "" : raw).trim().slice(0, Q_MAX);
-      return q ? { go: { search: { q } }, ui: searchClosedOps(device === "tv" && TAB_IDS.length > 1) } : null;
+      if (!q) return null;
+      return route && route.name === "search" ? { go: { search: { q } }, route: { pop: true }, state: { ui: null } } : { go: { search: { q } }, ui: searchClosedOps(device === "tv" && TAB_IDS.length > 1) };
     },
     openSettings() {
       return { route: { push: "settings" }, state: { fromBrowse: true } };
