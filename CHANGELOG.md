@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Back closes the search box (the screen declares onBack while searching) instead of the whole screen (std 1.6.1)
+
 ## 0.1.1
 
 - Messages in Spanish and English; Back closes the search box; a tab Kino cut short offers Retry (std 1.6.0)
