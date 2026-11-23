@@ -319,7 +319,9 @@ var multi = (d, p) => {
     return [];
   }
 };
-var clean = (t) => String(t).replaceAll("&#039;s", "'s").replaceAll("&#038;", "").replaceAll("&#8211;", "").replaceAll("&#8217;", "'").replaceAll("&amp;", "&").trim();
+var NAMED_ENTITIES = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ", ndash: "–", mdash: "—", hellip: "…", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", iexcl: "¡", iquest: "¿", laquo: "«", raquo: "»", aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú", ntilde: "ñ", Aacute: "Á", Eacute: "É", Iacute: "Í", Oacute: "Ó", Uacute: "Ú", Ntilde: "Ñ", uuml: "ü" };
+var codePoint = (c, m) => c > 0 && c <= 1114111 ? String.fromCodePoint(c) : m;
+var clean = (t) => String(t).replace(/&#([0-9]{1,7});/g, (m, n) => codePoint(Number(n), m)).replace(/&#x([0-9a-f]{1,6});/gi, (m, h) => codePoint(parseInt(h, 16), m)).replace(/&([a-z]+);/gi, (m, k) => NAMED_ENTITIES[k] ?? m).replace(/\s+/g, " ").trim();
 async function dl(url, post = null, headers = null) {
   const r = await kino.fetch(url, { method: post ? "POST" : "GET", body: post ? { form: post } : void 0, headers: headers || void 0 });
   return typeof r.text === "function" ? await r.text() : "";
