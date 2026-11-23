@@ -71,8 +71,8 @@ async function popularCatalog() {
     (type === "tvshow" ? series : movies).push(card);
   }
   const rows = [];
-  if (movies.length) rows.push({ title: "Películas populares", items: movies.slice(0, 18) });
-  if (series.length) rows.push({ title: "Series populares", items: series.slice(0, 18) });
+  if (movies.length) rows.push({ title: "Películas populares", titleEn: "Popular movies", items: movies.slice(0, 18) });
+  if (series.length) rows.push({ title: "Series populares", titleEn: "Popular series", items: series.slice(0, 18) });
   return rows;
 }
 
@@ -84,7 +84,7 @@ export async function catalog(kind) {
   const type = kind === "tvshow" ? "tvshow" : "movie";
   const recientes = await listPage(base, type);
   const rows = [];
-  if (recientes.length) rows.push({ title: kind === "tvshow" ? "Series recientes" : "Estrenos", items: recientes });
+  if (recientes.length) rows.push({ title: kind === "tvshow" ? "Series recientes" : "Estrenos", titleEn: kind === "tvshow" ? "Recent series" : "New releases", items: recientes });
   let genres = [];
   try { genres = await genreList(base); } catch { /* ignore */ }
   const genreRows = await Promise.all(genres.slice(0, 6).map(async (g) => {

@@ -13,6 +13,18 @@
 const LANG = { Lat: "Latino", LAT: "Latino", Esp: "Español", ESP: "Español", Vose: "VOSE", VOSE: "VOSE" };
 const TTL = 300000;
 
+// The English name of a genre row the site names in Spanish (keys without accents, lower case); a genre not here shows in Spanish.
+const GENRE_EN = {
+  accion: "Action", aventura: "Adventure", animacion: "Animation", anime: "Anime", belica: "War", guerra: "War",
+  "ciencia ficcion": "Science fiction", "ciencia-ficcion": "Science fiction", comedia: "Comedy", crimen: "Crime",
+  documental: "Documentary", documentales: "Documentaries", drama: "Drama", familia: "Family", familiar: "Family",
+  fantasia: "Fantasy", historia: "History", historica: "History", infantil: "Kids", misterio: "Mystery", musica: "Music",
+  musical: "Musical", romance: "Romance", romantica: "Romance", suspenso: "Thriller", suspense: "Thriller", thriller: "Thriller",
+  terror: "Horror", western: "Western", deporte: "Sport", deportes: "Sports", biografia: "Biography", dorama: "K-drama",
+  doramas: "K-dramas", "pelicula de tv": "TV movie", "reality": "Reality", "series": "Series", "peliculas": "Movies",
+};
+const genreEn = (title) => GENRE_EN[String(title || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase()];
+
 function slug(url) {
   const last = String(url).replace(/\/+$/, "").split("/").pop() || "x";
   return last.replace(/[^A-Za-z0-9._~-]/g, "-").slice(0, 120) || "x";
@@ -60,7 +72,7 @@ export function channel(site) {
     if (cache[tab] && now - at[tab] < TTL) return cache[tab];
     try {
       const rows = (await site.catalog(tab)) || [];
-      cache[tab] = rows.map((r) => ({ title: r.title, items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
+      cache[tab] = rows.map((r) => ({ title: r.title, titleEn: r.titleEn || genreEn(r.title), items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
       at[tab] = now;
     } catch { cache[tab] = cache[tab] || []; }
     return cache[tab];
@@ -155,7 +167,7 @@ export function channel(site) {
 
     /** The site's catalog for one kind ("movie", "tvshow", "popular") as the standard screen's rows (5 min cache). */
     async catalogRows(kind) {
-      return (await loadCatalog(kind)).map((r) => ({ id: slug(r.title), title: r.title, items: r.items }));
+      return (await loadCatalog(kind)).map((r) => ({ id: slug(r.title), title: r.title, ...(r.titleEn ? { titleEn: r.titleEn } : {}), items: r.items }));
     },
   };
 }

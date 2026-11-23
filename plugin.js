@@ -8,6 +8,47 @@ var __export = (target, all) => {
 // src/kit/content.js
 var LANG = { Lat: "Latino", LAT: "Latino", Esp: "Español", ESP: "Español", Vose: "VOSE", VOSE: "VOSE" };
 var TTL = 3e5;
+var GENRE_EN = {
+  accion: "Action",
+  aventura: "Adventure",
+  animacion: "Animation",
+  anime: "Anime",
+  belica: "War",
+  guerra: "War",
+  "ciencia ficcion": "Science fiction",
+  "ciencia-ficcion": "Science fiction",
+  comedia: "Comedy",
+  crimen: "Crime",
+  documental: "Documentary",
+  documentales: "Documentaries",
+  drama: "Drama",
+  familia: "Family",
+  familiar: "Family",
+  fantasia: "Fantasy",
+  historia: "History",
+  historica: "History",
+  infantil: "Kids",
+  misterio: "Mystery",
+  musica: "Music",
+  musical: "Musical",
+  romance: "Romance",
+  romantica: "Romance",
+  suspenso: "Thriller",
+  suspense: "Thriller",
+  thriller: "Thriller",
+  terror: "Horror",
+  western: "Western",
+  deporte: "Sport",
+  deportes: "Sports",
+  biografia: "Biography",
+  dorama: "K-drama",
+  doramas: "K-dramas",
+  "pelicula de tv": "TV movie",
+  "reality": "Reality",
+  "series": "Series",
+  "peliculas": "Movies"
+};
+var genreEn = (title) => GENRE_EN[String(title || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase()];
 function slug(url) {
   const last = String(url).replace(/\/+$/, "").split("/").pop() || "x";
   return last.replace(/[^A-Za-z0-9._~-]/g, "-").slice(0, 120) || "x";
@@ -65,7 +106,7 @@ function channel(site) {
     if (cache[tab] && now - at[tab] < TTL) return cache[tab];
     try {
       const rows = await site.catalog(tab) || [];
-      cache[tab] = rows.map((r) => ({ title: r.title, items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
+      cache[tab] = rows.map((r) => ({ title: r.title, titleEn: r.titleEn || genreEn(r.title), items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
       at[tab] = now;
     } catch {
       cache[tab] = cache[tab] || [];
@@ -158,7 +199,7 @@ function channel(site) {
     },
     /** The site's catalog for one kind ("movie", "tvshow", "popular") as the standard screen's rows (5 min cache). */
     async catalogRows(kind) {
-      return (await loadCatalog(kind)).map((r) => ({ id: slug(r.title), title: r.title, items: r.items }));
+      return (await loadCatalog(kind)).map((r) => ({ id: slug(r.title), title: r.title, ...r.titleEn ? { titleEn: r.titleEn } : {}, items: r.items }));
     }
   };
 }
@@ -286,8 +327,8 @@ async function popularCatalog() {
     (type === "tvshow" ? series : movies).push(card);
   }
   const rows = [];
-  if (movies.length) rows.push({ title: "Películas populares", items: movies.slice(0, 18) });
-  if (series.length) rows.push({ title: "Series populares", items: series.slice(0, 18) });
+  if (movies.length) rows.push({ title: "Películas populares", titleEn: "Popular movies", items: movies.slice(0, 18) });
+  if (series.length) rows.push({ title: "Series populares", titleEn: "Popular series", items: series.slice(0, 18) });
   return rows;
 }
 async function catalog(kind) {
@@ -296,7 +337,7 @@ async function catalog(kind) {
   const type = kind === "tvshow" ? "tvshow" : "movie";
   const recientes = await listPage(base, type);
   const rows = [];
-  if (recientes.length) rows.push({ title: kind === "tvshow" ? "Series recientes" : "Estrenos", items: recientes });
+  if (recientes.length) rows.push({ title: kind === "tvshow" ? "Series recientes" : "Estrenos", titleEn: kind === "tvshow" ? "Recent series" : "New releases", items: recientes });
   let genres = [];
   try {
     genres = await genreList(base);
@@ -914,7 +955,8 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     },
     retry({ state }) {
       const tab = TAB_IDS.includes(state.tab) ? state.tab : TAB_IDS[0];
-      return { state: { failed: null, pending: [tab] } };
+      const queued = Array.isArray(state.pending) ? state.pending.filter((t) => t !== tab) : [];
+      return { state: { failed: null, pending: [tab, ...queued] } };
     },
     async tick({ state }) {
       const pending = Array.isArray(state.pending) ? state.pending : [];

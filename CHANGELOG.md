@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Rows in English too (the site's fixed rows and known genres); Retry keeps the queued work (std 1.6.2)
+
 ## 0.1.2
 
 - Back closes the search box (the screen declares onBack while searching) instead of the whole screen (std 1.6.1)

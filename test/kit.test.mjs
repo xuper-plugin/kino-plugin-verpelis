@@ -24,3 +24,16 @@ for (const [lang, word] of [["es-CO", "instala"], ["en", "install"]]) {
     });
   });
 }
+
+test("catalog rows carry their English title: the site's own, else a known genre's, else none", async () => {
+  globalThis.kino = kinoWith("en");
+  const item = { url: "https://x.example/a", title: "A", type: "movie" };
+  const ch = channel({ ...site, catalog: async () => [
+    { title: "Estrenos", titleEn: "New releases", items: [item] },
+    { title: "Acción", items: [item] },
+    { title: "Ciencia ficción", items: [item] },
+    { title: "Telenovelas raras", items: [item] },
+  ] });
+  const rows = await ch.catalogRows("movie");
+  assert.deepEqual(rows.map((r) => r.titleEn), ["New releases", "Action", "Science fiction", undefined]);
+});
