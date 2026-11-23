@@ -10,6 +10,7 @@
 //   export async function seasons(url)     -> [{ season }]                                                  // optional (series)
 //   export async function episodesOf(url, season) -> [{ url, season, epis, title?, thumb? }]                // optional
 
+import { rankServers } from "../std/rank.js";
 const LANG = { Lat: "Latino", LAT: "Latino", Esp: "Español", ESP: "Español", Vose: "VOSE", VOSE: "VOSE" };
 const TTL = 300000;
 
@@ -127,9 +128,11 @@ export function channel(site) {
       };
       const needBrowser = [];
       // The hosts that have resolved inline for this person go first, so the default (main) stream is the most reliable;
-      // the site's order breaks ties, so with no history this is exactly the site's order.
+      // the resolver's ranking breaks ties.
       const stats = readStats();
-      const ordered = embeds.map((e, i) => ({ e, i })).sort((a, b) => scoreOf(hostOf(b.e.url), stats) - scoreOf(hostOf(a.e.url), stats) || a.i - b.i).map((x) => x.e);
+      // With no history: as kino-resolver ranks the hosters (its rank call, from the playback audit), else the site's order.
+      const ranked = await rankServers(kino, embeds, (e) => e.url);
+      const ordered = ranked.map((e, i) => ({ e, i })).sort((a, b) => scoreOf(hostOf(b.e.url), stats) - scoreOf(hostOf(a.e.url), stats) || a.i - b.i).map((x) => x.e);
       // Pass 1: the resolver (inline) for EVERY embed — fast; unknown/dead hosts return instantly. Fresh
       // content has an inline server (voe, vimeos, …) and resolves here without ever touching the browser.
       // Record the embeds the resolver says need a JS browser (a gated host like streamwish, an SPA like
