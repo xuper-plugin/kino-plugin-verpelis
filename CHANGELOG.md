@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Catalog door: Da-Video finds titles here (std 1.7.0)
+
 ## 0.1.3
 
 - Rows in English too (the site's fixed rows and known genres); Retry keeps the queued work (std 1.6.2)

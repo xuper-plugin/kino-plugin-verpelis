@@ -1,7 +1,7 @@
 {
   "id": "verpelis",
   "name": "VerPelis",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "apiVersion": 30,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -46,5 +46,36 @@
         "resolve"
       ]
     }
+  },
+  "provides": {
+    "catalog": {
+      "summary": "Titles this plugin finds, for the author's other plugins",
+      "calls": {
+        "search": {
+          "in": {
+            "q": "string",
+            "type": "string?"
+          },
+          "out": "Item[]"
+        }
+      },
+      "types": {
+        "Item": {
+          "id": "string",
+          "ref": "string",
+          "title": "string",
+          "kind": "string",
+          "poster": "string?",
+          "backdrop": "string?",
+          "year": "string?",
+          "overview": "string?",
+          "tmdb": "number?"
+        }
+      }
+    }
+  },
+  "signature": {
+    "authorKey": "6693946bd5c56196960959c4b9665fad5094374bcb85ddb282f8bf762c835263",
+    "value": "55a1a0674c5ff7b0ef08ccef8e3a784cd650891ebe0c2589152a6e37fdb694ff2a98203aefc6c46bfc74fa656ec0a8c64f515b76c2cfd85a20e2b9bbdb91570a"
   }
 }

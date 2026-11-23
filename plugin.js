@@ -484,6 +484,11 @@ var WORDS = {
   back: ["Atrás", "Back"],
   close: ["Cerrar", "Close"],
   settings: ["Ajustes", "Settings"],
+  resultsTitle: ["Resultados: {q}", "Results: {q}"],
+  resultsIn: ["En {name}", "In {name}"],
+  resultsSearching: ["Buscando en {name}…", "Searching {name}…"],
+  resultsFailed: ["{name} no respondió esta vez.", "{name} did not answer this time."],
+  noResults: ["No encontramos nada con esas palabras en tus plugins.", "Nothing in your plugins matched those words."],
   supportTv: ["Si te gusta mi trabajo, escanéalo y apóyame", "If you like my work, scan it and support me"],
   support: ["Si te gusta mi trabajo, apóyame", "If you like my work, support me"],
   gateTitle: ["Necesitas el motor de reproducción", "You need the playback engine"],
@@ -590,13 +595,15 @@ var rail = (r, key, words, headers) => ({
   items: r.items,
   ...withHeaders(headers)
 });
-function browseView(cfg, { tab, data, recent, pending, failed, searching = false, device = "phone" }) {
+function browseView(cfg, { tab, data, recent, pending, failed, searching = false, device = "phone", own = null }) {
   const tv = device === "tv";
-  const tabs = cfg.tabs;
+  const tabs = own ? [cfg.tabs[0]] : cfg.tabs;
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
   const withTabs = tabs.length > 1;
   const body = [];
-  if (data) {
+  if (own) {
+    body.push(...own);
+  } else if (data) {
     const h = cfg.imageHeaders;
     if (data.slides.length > 0) body.push(hero(data.slides, h));
     if (recent.length > 0) body.push(rail({ items: recent }, "recent", twin("recent", "title"), h));
@@ -644,6 +651,32 @@ function browseView(cfg, { tab, data, recent, pending, failed, searching = false
       { type: "SingleChildScrollView", key: "browse-" + active, flex: 1, children: [...banner ? [banner] : [], { type: "Column", padding: { compact: 12, expanded: 24 }, gap: 16, children: body }] }
     ] },
     ...pending ? { every: { ms: POLL_MS, event: "tick" } } : {}
+  };
+}
+function resultsView(cfg, { q, order, names, pending, found, device = "phone" }) {
+  const body = [];
+  let shown = 0;
+  order.forEach((repo, i) => {
+    const name = [names[repo] || repo, names[repo] || repo];
+    if (pending.includes(repo)) {
+      body.push({ type: "Column", key: "wait-" + i, gap: 8, children: [{ type: "Text", key: "waitText-" + i, color: "muted", ...twin("resultsSearching", "text", { name }) }, railSkeleton(i)] });
+      return;
+    }
+    const r = found.get(repo);
+    if (!r || !r.ok) {
+      body.push({ type: "Text", key: "failed-" + i, color: "muted", ...twin("resultsFailed", "text", { name }) });
+      return;
+    }
+    if (!r.items.length) return;
+    shown++;
+    body.push(rail({ items: r.items }, "found-" + i, twin("resultsIn", "title", { name }), cfg.imageHeaders));
+  });
+  if (!pending.length && shown === 0) body.unshift({ type: "Text", key: "noResults", ...twin("noResults") });
+  return {
+    type: "Scaffold",
+    appBar: bar({ leading: iconButton("back", "arrow_back", "back", "back"), title: { type: "Text", key: "resultsTitle", style: "h4", ...twin("resultsTitle", "text", { q }) } }),
+    body: { type: "SingleChildScrollView", key: "results-page", children: [{ type: "Column", padding: { compact: 12, expanded: 24 }, gap: 16, children: body }] },
+    ...pending.length ? { every: { ms: 1500, event: "tick" } } : {}
   };
 }
 function settingsView(cfg, device = "phone") {
@@ -778,7 +811,7 @@ var INFLIGHT_KEY = "std:inflight";
 var INFLIGHT_STALE_MS = 18e3;
 var MAX_META_TICKS = 10;
 var DEFAULT_TABS = [{ id: "inicio", label: "Inicio", labelEn: "Home" }];
-function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect = "1:1", needsResolver, hasSettings, tabs, loadTab, homeKey = null, titleOf: titleOf2, typeOf, tmdbPictures = false, imageHeaders = null }) {
+function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect = "1:1", needsResolver, hasSettings, tabs, loadTab, homeKey = null, titleOf: titleOf2, typeOf, tmdbPictures = false, imageHeaders = null, searchHere = null, page = null }) {
   const cfg = { name, nameEn, logo, logoAspect, imageHeaders, hasSettings: !!hasSettings, tabs: Array.isArray(tabs) && tabs.length > 0 ? tabs : DEFAULT_TABS };
   const TAB_IDS = cfg.tabs.map((t) => t.id);
   const meta = makeMetaCache({ kino: kino2, titleOf: titleOf2, typeOf, tmdbPictures });
@@ -809,6 +842,12 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     };
   };
   const metaTicks = /* @__PURE__ */ new Map();
+  const found = /* @__PURE__ */ new Map();
+  const SOURCES_PER_TICK = 3;
+  const asFound = (a, index) => ({
+    ok: !!(a && a.ok),
+    items: a && a.ok && Array.isArray(a.items) ? a.items.filter((x) => x && x.id && x.ref && x.title).slice(0, 40).map((x) => ({ ...x, id: ("p" + index + "~" + x.id).slice(0, 128), origin: a.repo })) : []
+  });
   const memo = /* @__PURE__ */ new Map();
   const log = (...a) => {
     try {
@@ -900,12 +939,28 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     const device = c.device || "phone";
     if (needsResolver && !(c.installed && c.installed[RESOLVER_REPO])) return gateView(cfg, device);
     if (c.route && c.route.name === "settings") return settingsView(cfg, device);
+    if (searchHere && c.route && c.route.name === "results") {
+      const st0 = c.state && typeof c.state === "object" ? c.state : {};
+      return resultsView(cfg, {
+        q: String(st0.rq || ""),
+        order: Array.isArray(st0.rorder) ? st0.rorder : [],
+        names: st0.rnames || {},
+        pending: Array.isArray(st0.rpending) ? st0.rpending : [],
+        found,
+        device
+      });
+    }
     const st = c.state && typeof c.state === "object" ? c.state : {};
     const tab = TAB_IDS.includes(st.tab) ? st.tab : tabFromArgs(c.route) ?? stored() ?? TAB_IDS[0];
     const data = enrich(dataOf(tab));
     const loaded = TAB_IDS.map((t) => memo.get(t)).filter(Boolean).map((m) => m.data);
     const pending = Array.isArray(st.pending) && st.pending.length > 0;
     const searching = st.searching === true;
+    if (page) {
+      const tree = browseView(cfg, { tab: TAB_IDS[0], data: null, recent: [], pending: false, failed: false, searching, device, own: page.view({ ...c, state: st }) || [] });
+      const every = page.every ? page.every({ ...c, state: st }) : null;
+      return every ? { ...tree, every } : tree;
+    }
     return browseView(cfg, { tab, data, recent: meta.dress(recentOf(readKeys(), loaded)), pending, failed: !!(st.failed && st.failed[tab]), searching, device });
   }
   function cutShort() {
@@ -921,16 +976,16 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
   }
   async function load(tab) {
     set(INFLIGHT_KEY, JSON.stringify({ tab, at: Date.now() }));
-    let page;
+    let page2;
     try {
-      page = await loadTab(tab);
+      page2 = await loadTab(tab);
     } finally {
       try {
         kino2.storage.remove(INFLIGHT_KEY);
       } catch (_) {
       }
     }
-    const data = tabOf(page);
+    const data = tabOf(page2);
     if (data) {
       memo.set(tab, { data, whole: true });
       writeSnap(tab, data);
@@ -938,7 +993,19 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     return data !== null;
   }
   const events = {
-    open({ route, state, device }) {
+    async open(ev) {
+      if (page) {
+        let patch = {};
+        try {
+          patch = (page.open ? await page.open(ev) : {}) || {};
+        } catch (e) {
+          log("page open", e && e.code || "error");
+        }
+        return { state: { ...patch, tab: TAB_IDS[0], pending: [], failed: null } };
+      }
+      return events.openTabs(ev);
+    },
+    openTabs({ route, state, device }) {
       const tab = tabFromArgs(route) ?? (TAB_IDS.includes(state.tab) ? state.tab : stored() ?? TAB_IDS[0]);
       for (const t of TAB_IDS) dataOf(t);
       return { state: { tab, pending: needed(tab), failed: null } };
@@ -958,7 +1025,24 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
       const queued = Array.isArray(state.pending) ? state.pending.filter((t) => t !== tab) : [];
       return { state: { failed: null, pending: [tab, ...queued] } };
     },
-    async tick({ state }) {
+    async tick({ state, route }) {
+      if (searchHere && route && route.name === "results") {
+        const rp = Array.isArray(state.rpending) ? state.rpending : [];
+        if (rp.length === 0) return null;
+        const batch = rp.slice(0, SOURCES_PER_TICK);
+        const order = Array.isArray(state.rorder) ? state.rorder : [];
+        let answers = [];
+        try {
+          answers = await searchHere.searchIn(String(state.rq || ""), batch);
+        } catch (e) {
+          log("results", e && e.code || "error");
+        }
+        for (const repo of batch) {
+          const a = (Array.isArray(answers) ? answers : []).find((x) => x && x.repo === repo);
+          found.set(repo, asFound(a, order.indexOf(repo)));
+        }
+        return { state: { rpending: rp.slice(SOURCES_PER_TICK) } };
+      }
       const pending = Array.isArray(state.pending) ? state.pending : [];
       if (pending.length === 0) return null;
       const [next, ...rest] = pending;
@@ -1002,12 +1086,31 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     searchClosed() {
       return { state: { searching: false, ui: null } };
     },
-    search({ value, state, device }) {
+    async search({ value, state, device }) {
       const typed = value && typeof value === "object" ? value.q : value;
       const raw = typed != null && String(typed).trim() !== "" ? typed : state.inputs && state.inputs.q;
       const q = String(raw == null ? "" : raw).trim().slice(0, Q_MAX);
       if (!q) return null;
-      return { go: { search: { q } }, ui: searchClosedOps(device === "tv" && TAB_IDS.length > 1), state: { searching: false, ui: null } };
+      const closed = searchClosedOps(device === "tv" && TAB_IDS.length > 1);
+      if (searchHere) {
+        let sources = [];
+        try {
+          sources = await searchHere.sources() || [];
+        } catch (e) {
+          log("sources", e && e.code || "error");
+        }
+        const order = sources.map((x) => x.repo).filter((r) => typeof r === "string");
+        found.clear();
+        return { route: { push: "results" }, ui: closed, state: {
+          searching: false,
+          ui: null,
+          rq: q,
+          rorder: order,
+          rnames: Object.fromEntries(sources.map((x) => [x.repo, String(x.name || x.repo)])),
+          rpending: order
+        } };
+      }
+      return { go: { search: { q } }, ui: closed, state: { searching: false, ui: null } };
     },
     openSettings() {
       return { route: { push: "settings" }, state: { fromBrowse: true } };
@@ -1020,7 +1123,9 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
   async function screenEvent2(ev) {
     const e = ev || {};
     const name2 = e.name != null ? e.name : e.event;
-    const handler = typeof name2 === "string" && Object.hasOwn(events, name2) ? events[name2] : null;
+    const own = page && page.events && typeof name2 === "string" && Object.hasOwn(page.events, name2) && !Object.hasOwn(events, name2) ? page.events[name2] : null;
+    if (own) return await own({ ...e, state: e.state || {} }) ?? null;
+    const handler = typeof name2 === "string" && name2 !== "openTabs" && Object.hasOwn(events, name2) ? events[name2] : null;
     return handler ? await handler({ ...e, state: e.state || {} }) ?? null : null;
   }
   return { screen: screen2, screenEvent: screenEvent2, notePlayed };
@@ -1029,6 +1134,40 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
 // src/logo.js
 var LOGO = "data:image/png;base64,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";
 var LOGO_ASPECT = "1:1";
+
+// src/std/catalog.js
+var CATALOG_MAX = 40;
+var OVERVIEW_MAX2 = 300;
+var HTTPS3 = /^https:\/\//;
+function catalogItems(found) {
+  const out = [];
+  const list = Array.isArray(found) ? found : found && Array.isArray(found.items) ? found.items : [];
+  for (const it of list) {
+    if (out.length >= CATALOG_MAX) break;
+    if (!it || typeof it.id !== "string" || !it.id || typeof it.ref !== "string" || !it.ref || typeof it.title !== "string" || !it.title) continue;
+    const item = { id: it.id, ref: it.ref, title: it.title, kind: typeof it.kind === "string" && it.kind ? it.kind : "movie" };
+    if (typeof it.poster === "string" && HTTPS3.test(it.poster)) item.poster = it.poster;
+    if (typeof it.backdrop === "string" && HTTPS3.test(it.backdrop)) item.backdrop = it.backdrop;
+    if (it.year !== void 0 && it.year !== null && String(it.year)) item.year = String(it.year);
+    if (typeof it.overview === "string" && it.overview.trim()) item.overview = it.overview.trim().slice(0, OVERVIEW_MAX2);
+    const tmdb = it.ids && Number.isInteger(it.ids.tmdb) ? it.ids.tmdb : Number.isInteger(it.tmdb) ? it.tmdb : 0;
+    if (tmdb > 0) item.tmdb = tmdb;
+    out.push(item);
+  }
+  return out;
+}
+function catalogQuery(arg) {
+  const q = String(arg && arg.q || "").trim().slice(0, 200);
+  const type = arg && (arg.type === "movie" || arg.type === "series") ? arg.type : "any";
+  return { q, type, season: 0, episode: 0, tmdbId: 0, year: 0, originalTitle: "", altTitles: [], cursor: null };
+}
+function catalogDoor(search3) {
+  return async (arg) => {
+    const query = catalogQuery(arg);
+    if (!query.q) return [];
+    return catalogItems(await search3(query));
+  };
+}
 
 // src/plugin.js
 var ch = channel(site_exports);
@@ -1058,8 +1197,10 @@ async function screenEvent(ev) {
   await null;
   return standard().screenEvent(ev && typeof ev === "object" ? ev : {});
 }
+var proto_catalog_search = catalogDoor(search2);
 export {
   episodes,
+  proto_catalog_search,
   resolve,
   screen,
   screenEvent,
