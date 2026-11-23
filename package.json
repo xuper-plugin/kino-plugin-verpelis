@@ -1,0 +1,16 @@
+{
+  "name": "kino-plugin-verpelis",
+  "private": true,
+  "type": "module",
+  "description": "VerPelis content-source plugin. Source in src/ (site.js + the channel-kit in src/kit + the standard screen in src/std), bundled into plugin.js. Consumes kino-resolver.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check:built": "node scripts/build.mjs --check",
+    "test": "node --test test/*.test.mjs",
+    "validate": "node scripts/build.mjs && node sdk/validate.mjs . --repo xuper-plugin/kino-plugin-verpelis"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  }
+}
