@@ -8,7 +8,6 @@ import { LOGO, LOGO_ASPECT } from "./logo.js";
 
 const ch = channel(site);
 export const search = ch.search;
-export const episodes = ch.episodes;
 export const resolve = ch.resolve;
 
 // VerPelis plays nothing on its own: every hoster goes through kino-resolver (resolve() refuses while it is missing), so
@@ -18,7 +17,6 @@ const standard = () => (std ??= makeStandardScreen({ snapshot: "xuper-plugin/kin
   kino: globalThis.kino, name: "VerPelis", logo: LOGO, logoAspect: LOGO_ASPECT, needsResolver: true, hasSettings: false,
   tabs: [
     { id: "movie", label: "Películas", labelEn: "Movies" },
-    { id: "tvshow", label: "Series", labelEn: "Series" },
     { id: "popular", label: "Populares", labelEn: "Popular" },
   ],
   loadTab: async (kind) => ({ rows: await ch.catalogRows(kind) }),

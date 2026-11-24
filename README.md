@@ -1,6 +1,6 @@
 # VerPelis
 
-Películas y series de **verpelis.gratis** en Kino. **Sin torrents**: enlaces de reproducción directa,
+Películas de **verpelis.gratis** en Kino. **Sin torrents**: enlaces de reproducción directa,
 resueltos por el plugin **Kino Resolver**.
 
 ## Instalar

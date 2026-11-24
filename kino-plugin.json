@@ -1,11 +1,11 @@
 {
   "id": "verpelis",
   "name": "VerPelis",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "apiVersion": 30,
   "entry": "plugin.js",
   "icon": "icon.png",
-  "description": "Películas y series de verpelis.gratis. Resuelve los hosters con el plugin Kino Resolver.",
+  "description": "Películas de verpelis.gratis. Resuelve los hosters con el plugin Kino Resolver.",
   "author": "xuper-plugin",
   "homepage": "https://github.com/xuper-plugin/kino-plugin-verpelis",
   "hosts": [
@@ -20,7 +20,6 @@
   "capabilities": [
     "search",
     "resolve",
-    "episodes",
     "screen"
   ],
   "screen": {
@@ -77,6 +76,6 @@
   },
   "signature": {
     "authorKey": "6693946bd5c56196960959c4b9665fad5094374bcb85ddb282f8bf762c835263",
-    "value": "d674ecbef2cee2159821f305f11a79462c4f9ec599e3d9c6ddb6fc323f4302213d7a3596adc947f3ca41c20251258d5f875d9798c2b59cc2969c169d751e8603"
+    "value": "0ce5301f5f71b706ac1d6f96d34912bd2e305de65672d7f011f42ce94b5ab3919d025943ffc6752280e96ecdea0d9af06dda09c36aadfee5c73892c65c2c4a02"
   }
 }

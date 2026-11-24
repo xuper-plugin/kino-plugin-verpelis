@@ -16,41 +16,30 @@ export async function search(q) {
     const thumb = single(m, '<img src="(.*?)"');
     const cy = single(title, "(\\d{4})"); if (cy) title = title.replace("(" + cy + ")", "").trim();
     const year = single(m, '<span class="year">(.*?)</span>') || "";
-    items.push({ url, title, thumb, year, type: m.includes(">TV<") ? "tvshow" : "movie" });
+    // Movies only: the site lists series but has no video for any episode (its player answers embed_url null for every
+    // one, measured on 14 series, 2026-11-24), so a series would open and never play.
+    if (m.includes(">TV<") || /\/series\//.test(url)) continue;
+    items.push({ url, title, thumb, year, type: "movie" });
   }
   return items;
 }
 
-export async function seasons(url) {
-  const data = await dl(url);
-  return multi(data, "<span class='se-t.*?'>(.*?)</span>").map((t) => ({ season: String(t).trim() }));
-}
-
-export async function episodesOf(url, season) {
-  const data = await dl(url);
-  const bloque = single(data, "<span class='se-t.*?'>" + season + "</span>(.*?)</ul>");
-  const out = [];
-  for (const [thumb, se, epUrl, title] of multi(bloque, "<li class='mark-.*?<img src='(.*?)'.*?</div><div class='numerando'>(.*?)</div>.*?<a href='(.*?)'>(.*?)</a>")) {
-    out.push({ thumb, season: single(se, "(.*?)-").trim(), epis: single(se, "-(.*?)$").trim(), url: epUrl, title: clean(title) });
-  }
-  return out;
-}
-
-function parseCards(bloque, type) {
+function parseCards(bloque) {
   const out = [];
   for (const m of multi(bloque, "<article(.*?)</article>")) {
     const u = single(m, '<a href="(.*?)"');
     const title = clean(single(m, 'alt="(.*?)"'));
     if (!u || !title) continue;
-    out.push({ url: u, title, thumb: single(m, '<img src="(.*?)"'), year: single(m, "</h3><span>(.*?)</span>") || "", type });
+    if (/\/series\//.test(u)) continue;
+    out.push({ url: u, title, thumb: single(m, '<img src="(.*?)"'), year: single(m, "</h3><span>(.*?)</span>") || "", type: "movie" });
     if (out.length >= 18) break;
   }
   return out;
 }
-async function listPage(url, type) {
+async function listPage(url) {
   const data = await dl(url);
   const bloque = single(data, ">Añadido recientemente<(.*?)>Géneros<") || single(data, "</h1>(.*?)>Géneros<") || data;
-  return parseCards(bloque, type);
+  return parseCards(bloque);
 }
 async function genreList(base) {
   const data = await dl(base);
@@ -58,37 +47,24 @@ async function genreList(base) {
   return multi(bloque, '<a href="(.*?)".*?>(.*?)</a>').map(([u, t]) => ({ url: u, title: clean(String(t)).replace(/&amp;/g, "&") })).filter((g) => g.url && g.title);
 }
 
-// Populares tab: /tendencias/ is a mixed movie+series grid; the type is in the URL path.
+// Populares tab: /tendencias/ is a mixed movie+series grid; only its movies are kept.
 async function popularCatalog() {
-  const data = await dl(HOST + "tendencias/");
-  const movies = [], series = [];
-  for (const m of multi(data, "<article(.*?)</article>")) {
-    const u = single(m, '<a href="(.*?)"');
-    const title = clean(single(m, 'alt="(.*?)"'));
-    if (!u || !title) continue;
-    const type = /\/series\//.test(u) ? "tvshow" : "movie";
-    const card = { url: u, title, thumb: single(m, '<img src="(.*?)"'), year: single(m, "</h3><span>(.*?)</span>") || "", type };
-    (type === "tvshow" ? series : movies).push(card);
-  }
-  const rows = [];
-  if (movies.length) rows.push({ title: "Películas populares", titleEn: "Popular movies", items: movies.slice(0, 18) });
-  if (series.length) rows.push({ title: "Series populares", titleEn: "Popular series", items: series.slice(0, 18) });
-  return rows;
+  const movies = parseCards(await dl(HOST + "tendencias/"));
+  return movies.length ? [{ title: "Películas populares", titleEn: "Popular movies", items: movies }] : [];
 }
 
-// Home rows for a tab. kind: "movie" (Películas) | "tvshow" (Series) | "popular" (Populares). Row 0 =
-// recent/top (feeds the hero), then a rail per genre.
+// Home rows for a tab. kind: "movie" (Películas) | "popular" (Populares). Row 0 = recent/top (feeds the hero), then a rail
+// per genre.
 export async function catalog(kind) {
   if (kind === "popular") return popularCatalog();
-  const base = kind === "tvshow" ? HOST + "series/" : HOST + "peliculas/";
-  const type = kind === "tvshow" ? "tvshow" : "movie";
-  const recientes = await listPage(base, type);
+  const base = HOST + "peliculas/";
+  const recientes = await listPage(base);
   const rows = [];
-  if (recientes.length) rows.push({ title: kind === "tvshow" ? "Series recientes" : "Estrenos", titleEn: kind === "tvshow" ? "Recent series" : "New releases", items: recientes });
+  if (recientes.length) rows.push({ title: "Estrenos", titleEn: "New releases", items: recientes });
   let genres = [];
   try { genres = await genreList(base); } catch { /* ignore */ }
   const genreRows = await Promise.all(genres.slice(0, 6).map(async (g) => {
-    try { const items = await listPage(g.url, type); return items.length ? { title: g.title, items } : null; } catch { return null; }
+    try { const items = await listPage(g.url); return items.length ? { title: g.title, items } : null; } catch { return null; }
   }));
   for (const r of genreRows) if (r) rows.push(r);
   return rows;
