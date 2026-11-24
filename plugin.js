@@ -74,6 +74,7 @@ function slug(url) {
   const last = String(url).replace(/\/+$/, "").split("/").pop() || "x";
   return last.replace(/[^A-Za-z0-9._~-]/g, "-").slice(0, 120) || "x";
 }
+var MAX_CAPTURES = 2;
 var STATS_KEY = "srvStats";
 var STATS_CAP = 24;
 function readStats() {
@@ -155,7 +156,7 @@ function channel(site) {
       return { episodes: eps };
     },
     async resolve(ref) {
-      const m = /^([mes])\|(.+)$/.exec(String(ref));
+      const m = /^([mesx])\|(.+)$/.exec(String(ref));
       if (!m) throw kino.error("not_found", "bad ref: " + String(ref).slice(0, 80));
       let resolverUp = true;
       try {
@@ -164,60 +165,69 @@ function channel(site) {
         resolverUp = (err && err.code) !== "provider_missing";
       }
       if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: say("Para reproducir, abre " + name + " desde el menú e instala el motor de reproducción que te pedirá.", "To play, open " + name + " from the menu and install the playback engine it asks for.") });
-      const embeds = await site.findvideos(m[2]);
+      const cut = m[1] === "x" ? m[2].indexOf("|") : -1;
+      const one = cut >= 0 && m[2].slice(cut + 1).startsWith("https://") ? [null, m[2].slice(0, cut), m[2].slice(cut + 1)] : null;
+      if (m[1] === "x" && !one) throw kino.error("not_found", "bad ref: " + String(ref).slice(0, 80));
+      const embeds = one ? [{ url: one[2], lang: one[1] }] : await site.findvideos(m[2]);
       if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: say("Sin enlaces disponibles", "No links available") });
-      const streams = [];
-      const seen = /* @__PURE__ */ new Set();
-      const collect = (got, lang) => {
+      const labelOf = (lang, server) => ((LANG[lang] || lang || "") + (server ? " · " + server : "")).trim().slice(0, 48);
+      const toStreams = (got, lang) => {
+        const out = [];
+        const seen = /* @__PURE__ */ new Set();
         for (const s of got) {
           if (!s.url || seen.has(s.url)) continue;
           seen.add(s.url);
           const stream = { url: s.url };
-          const label = ((LANG[lang] || lang || "") + (s.server ? " · " + s.server : "")).trim().slice(0, 48);
+          const label = labelOf(lang, s.server);
           if (label) stream.label = label;
           if (s.mime) stream.mime = s.mime;
           const hdrs = {};
           for (const h of s.headers || []) hdrs[h.name] = h.value;
           if (s.referer && !hdrs.Referer) hdrs.Referer = s.referer;
           if (Object.keys(hdrs).length) stream.headers = hdrs;
-          streams.push(stream);
+          out.push(stream);
         }
+        return out;
+      };
+      const stats = readStats();
+      const ranked = one ? embeds : await rankServers(kino, embeds, (e) => e.url);
+      const ordered = ranked.map((e, i) => ({ e, i })).sort((a, b) => scoreOf(hostOf(b.e.url), stats) - scoreOf(hostOf(a.e.url), stats) || a.i - b.i).map((x) => x.e);
+      const lazy = (skip) => ordered.filter((e) => e !== skip).map((e) => ({ ref: "x|" + (e.lang || "") + "|" + e.url, label: labelOf(e.lang, hostOf(e.url).split(".")[0]) }));
+      const deliver = (streams, from) => {
+        const [first, ...rest] = streams;
+        const main = { ...first, expiresInSeconds: 1800 };
+        const others = one ? rest : [...rest, ...lazy(from)];
+        if (others.length) main.alternatives = others.slice(0, 8);
+        return main;
       };
       const needBrowser = [];
-      const stats = readStats();
-      const ranked = await rankServers(kino, embeds, (e) => e.url);
-      const ordered = ranked.map((e, i) => ({ e, i })).sort((a, b) => scoreOf(hostOf(b.e.url), stats) - scoreOf(hostOf(a.e.url), stats) || a.i - b.i).map((x) => x.e);
       for (const e of ordered) {
         try {
           const res = await kino.plugins.call("resolver", "resolve", { url: e.url, referer: site.HOST });
-          const got = res && res.streams || [];
-          collect(got, e.lang);
+          const got = toStreams(res && res.streams || [], e.lang);
           noteServer(hostOf(e.url), got.length > 0);
-          if (!got.length && res && res.error === "needs_browser") needBrowser.push(e);
+          if (got.length) return deliver(got, e);
+          if (res && res.error === "needs_browser") needBrowser.push(e);
         } catch {
           noteServer(hostOf(e.url), false);
           needBrowser.push(e);
         }
       }
-      if (!streams.length && needBrowser.length && globalThis.kino && kino.browser && typeof kino.browser.capture === "function") {
-        for (const e of needBrowser) {
+      if (needBrowser.length && globalThis.kino && kino.browser && typeof kino.browser.capture === "function") {
+        for (const e of needBrowser.slice(0, MAX_CAPTURES)) {
           try {
             const cap = await kino.browser.capture(e.url, { headers: { Referer: site.HOST }, timeoutMs: 18e3 });
-            collect((cap && cap.media || []).map((mm) => ({
+            const got = toStreams((cap && cap.media || []).map((mm) => ({
               url: mm.url,
               server: "browser",
               headers: Object.entries(mm.headers || {}).filter(([, v]) => v != null).map(([name2, value]) => ({ name: name2, value: String(value) }))
             })), e.lang);
+            if (got.length) return deliver(got, e);
           } catch {
           }
-          if (streams.length) break;
         }
       }
-      if (!streams.length) throw kino.error("not_found", "no playable streams", { userMessage: say("No se pudo resolver el video", "The video could not be opened") });
-      const [first, ...rest] = streams;
-      const main = { ...first, expiresInSeconds: 1800 };
-      if (rest.length) main.alternatives = rest.slice(0, 8);
-      return main;
+      throw kino.error("not_found", "no playable streams", { userMessage: say("No se pudo resolver el video", "The video could not be opened") });
     },
     /** The site's catalog for one kind ("movie", "tvshow", "popular") as the standard screen's rows (5 min cache). */
     async catalogRows(kind) {

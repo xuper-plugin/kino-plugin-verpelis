@@ -33,6 +33,8 @@ function slug(url) {
 
 // ---- learned server reliability: the hosts that resolve inline for this person are tried first next time, so the
 //      default (main) stream is the most reliable; every embed is still resolved, only the order (hence main) changes. ----
+/** Hidden-browser pages one resolve may open (20 s each; Kino gives a resolve 75 s). */
+const MAX_CAPTURES = 2;
 const STATS_KEY = "srvStats";
 const STATS_CAP = 24; // halve the counts past this, so a host that recovers climbs back
 function readStats() { try { return JSON.parse((kino.storage && kino.storage.get(STATS_KEY)) || "{}") || {}; } catch (_) { return {}; } }
@@ -100,72 +102,81 @@ export function channel(site) {
     },
 
     async resolve(ref) {
-      const m = /^([mes])\|(.+)$/.exec(String(ref));
+      const m = /^([mesx])\|(.+)$/.exec(String(ref));
       if (!m) throw kino.error("not_found", "bad ref: " + String(ref).slice(0, 80));
       // This plugin plays nothing on its own: the shared kino-resolver does the hosters. If it is not installed, send the
       // person to the screen to install it (the probe is provider_missing only when it is truly absent).
       let resolverUp = true;
       try { await kino.plugins.call("resolver", "normalizeHost", { url: "https://probe.invalid/" }); } catch (err) { resolverUp = (err && err.code) !== "provider_missing"; }
       if (!resolverUp) throw kino.error("unavailable", "resolver missing", { userMessage: say("Para reproducir, abre " + name + " desde el menú e instala el motor de reproducción que te pedirá.", "To play, open " + name + " from the menu and install the playback engine it asks for.") });
-      const embeds = await site.findvideos(m[2]);
+      // One server's own address ("x|<lang>|<embed>"): a copy the person picked, or the player's fallback. The site is not asked again.
+      const cut = m[1] === "x" ? m[2].indexOf("|") : -1;
+      const one = cut >= 0 && m[2].slice(cut + 1).startsWith("https://") ? [null, m[2].slice(0, cut), m[2].slice(cut + 1)] : null;
+      if (m[1] === "x" && !one) throw kino.error("not_found", "bad ref: " + String(ref).slice(0, 80));
+      const embeds = one ? [{ url: one[2], lang: one[1] }] : await site.findvideos(m[2]);
       if (!embeds || !embeds.length) throw kino.error("not_found", "no embeds", { userMessage: say("Sin enlaces disponibles", "No links available") });
-      const streams = [];
-      const seen = new Set();
-      const collect = (got, lang) => {
+      const labelOf = (lang, server) => ((LANG[lang] || lang || "") + (server ? " · " + server : "")).trim().slice(0, 48);
+      const toStreams = (got, lang) => {
+        const out = [];
+        const seen = new Set();
         for (const s of got) {
           if (!s.url || seen.has(s.url)) continue;
           seen.add(s.url);
           const stream = { url: s.url };
-          const label = ((LANG[lang] || lang || "") + (s.server ? " · " + s.server : "")).trim().slice(0, 48);
+          const label = labelOf(lang, s.server);
           if (label) stream.label = label;
           if (s.mime) stream.mime = s.mime;
           const hdrs = {};
           for (const h of s.headers || []) hdrs[h.name] = h.value;
           if (s.referer && !hdrs.Referer) hdrs.Referer = s.referer;
           if (Object.keys(hdrs).length) stream.headers = hdrs;
-          streams.push(stream);
+          out.push(stream);
         }
+        return out;
       };
-      const needBrowser = [];
-      // The hosts that have resolved inline for this person go first, so the default (main) stream is the most reliable;
-      // the resolver's ranking breaks ties.
+      // The hosts that have resolved inline for this person go first; the resolver's ranking breaks ties (its rank call, from
+      // the playback audit), else the site's order.
       const stats = readStats();
-      // With no history: as kino-resolver ranks the hosters (its rank call, from the playback audit), else the site's order.
-      const ranked = await rankServers(kino, embeds, (e) => e.url);
+      const ranked = one ? embeds : await rankServers(kino, embeds, (e) => e.url);
       const ordered = ranked.map((e, i) => ({ e, i })).sort((a, b) => scoreOf(hostOf(b.e.url), stats) - scoreOf(hostOf(a.e.url), stats) || a.i - b.i).map((x) => x.e);
-      // Pass 1: the resolver (inline) for EVERY embed — fast; unknown/dead hosts return instantly. Fresh
-      // content has an inline server (voe, vimeos, …) and resolves here without ever touching the browser.
-      // Record the embeds the resolver says need a JS browser (a gated host like streamwish, an SPA like
-      // filemoon); skip the ones it calls "dead" so Pass 2 never wastes a WebView on an expired upload.
+      /** The other servers as copies Kino resolves only when asked (the menu, or its own fallback when one does not play). */
+      const lazy = (skip) => ordered.filter((e) => e !== skip).map((e) => ({ ref: "x|" + (e.lang || "") + "|" + e.url, label: labelOf(e.lang, hostOf(e.url).split(".")[0]) }));
+      const deliver = (streams, from) => {
+        const [first, ...rest] = streams;
+        const main = { ...first, expiresInSeconds: 1800 };
+        const others = one ? rest : [...rest, ...lazy(from)];
+        if (others.length) main.alternatives = others.slice(0, 8);
+        return main;
+      };
+      // Pass 1: the resolver (inline), one server after another IN ORDER, and the first that answers plays. Every server used
+      // to be resolved before the first frame (10-13 s on a page with six of them, measured 2026-11-24); the rest are now
+      // lazy copies. The ones the resolver says need a JS browser are kept for pass 2; a "dead" one is dropped.
+      const needBrowser = [];
       for (const e of ordered) {
         try {
           const res = await kino.plugins.call("resolver", "resolve", { url: e.url, referer: site.HOST });
-          const got = (res && res.streams) || [];
-          collect(got, e.lang);
+          const got = toStreams((res && res.streams) || [], e.lang);
           noteServer(hostOf(e.url), got.length > 0);
-          if (!got.length && res && res.error === "needs_browser") needBrowser.push(e);
+          if (got.length) return deliver(got, e);
+          if (res && res.error === "needs_browser") needBrowser.push(e);
         } catch { noteServer(hostOf(e.url), false); needBrowser.push(e); }
       }
-      // Pass 2: ONLY the needs-browser embeds, and ONLY if nothing resolved inline — Kino's WebView as a
+      // Pass 2: ONLY the needs-browser embeds, and ONLY because nothing resolved inline — Kino's WebView as a
       // last resort (needs browser + any-host; kino.browser.capture runs in resolve(), never in the
       // resolver's provider door). The page autoplays and we capture its media; one working stream is enough.
-      if (!streams.length && needBrowser.length && globalThis.kino && kino.browser && typeof kino.browser.capture === "function") {
-        for (const e of needBrowser) {
+      if (needBrowser.length && globalThis.kino && kino.browser && typeof kino.browser.capture === "function") {
+        for (const e of needBrowser.slice(0, MAX_CAPTURES)) {
           try {
             const cap = await kino.browser.capture(e.url, { headers: { Referer: site.HOST }, timeoutMs: 18000 });
-            collect(((cap && cap.media) || []).map((mm) => ({
+            const got = toStreams(((cap && cap.media) || []).map((mm) => ({
               url: mm.url, server: "browser",
               headers: Object.entries(mm.headers || {}).filter(([, v]) => v != null).map(([name, value]) => ({ name, value: String(value) })),
             })), e.lang);
+            if (got.length) return deliver(got, e);
           } catch { /* ignore */ }
-          if (streams.length) break;
         }
       }
-      if (!streams.length) throw kino.error("not_found", "no playable streams", { userMessage: say("No se pudo resolver el video", "The video could not be opened") });
-      const [first, ...rest] = streams;
-      const main = { ...first, expiresInSeconds: 1800 };
-      if (rest.length) main.alternatives = rest.slice(0, 8);
-      return main;
+      throw kino.error("not_found", "no playable streams", { userMessage: say("No se pudo resolver el video", "The video could not be opened") });
     },
 
     /** The site's catalog for one kind ("movie", "tvshow", "popular") as the standard screen's rows (5 min cache). */
