@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.11
+
+- Home by categories: the plugin now answers Kino's home() with typed rows (Estrenos and popular titles as Películas, Infantil, Documentales)
+
 ## 0.1.8
 
 - Netu/Waaw no longer appears among the servers (std 1.9.3)

@@ -75,3 +75,33 @@ test("a lazy copy's ref resolves that one server, without asking the site again"
   assert.deepEqual(asked, ["https://c.example/e/3"]);
   await assert.rejects(channel(three).resolve("x|Esp|ftp://nope"), (e) => e.code === "not_found");
 });
+
+test("home(): typed rows (Kino's genre tag), a failing row left out, rows kept for the next call", async () => {
+  const store = new Map();
+  globalThis.kino = { ...kinoWith("es-CO"), storage: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, sleep: (ms) => new Promise((r) => setTimeout(r, ms)) };
+  const card = (n, type = "movie") => ({ url: "https://x.example/" + n, title: "T" + n, type });
+  const site2 = { ...site, HOME_ROWS: [
+    { id: "a", title: "Estrenos", genre: "peliculas", urls: ["p1"] },
+    { id: "b", title: "Series recientes", genre: "series", urls: ["s1"] },
+    { id: "c", title: "Infantil", genre: "infantil", urls: ["k1", "k2"] },
+    { id: "d", title: "Rota", genre: "documentales", urls: ["bad"] },
+  ], listPage: async (u) => {
+    if (u === "bad") throw new Error("down");
+    if (u === "k1") return [card(1), card(2)];
+    if (u === "k2") return [card(2), card(3, "tvshow")];
+    return [card(u === "s1" ? 10 : 20, u === "s1" ? "tvshow" : "movie")];
+  } };
+  const rows = await channel(site2).home();
+  assert.deepEqual(rows.map((r) => [r.id, r.genre]), [["a", "peliculas"], ["b", "series"], ["c", "infantil"]]);
+  assert.equal(rows[1].items[0].kind, "series");
+  assert.deepEqual(rows[2].items.map((i) => i.title), ["T1", "T2", "T3"], "two pages merged, no duplicates");
+  assert.ok(rows.every((r) => r.items.length > 0 && r.items.every((i) => i.ref)));
+});
+
+test("home(): the site's own rows are typed with Kino's closed vocabulary", async () => {
+  const site2 = await import("../src/site.js");
+  const ok = new Set(["peliculas", "series", "anime", "infantil", "documentales"]);
+  assert.ok(site2.HOME_ROWS.length >= 3);
+  for (const r of site2.HOME_ROWS) { assert.ok(ok.has(r.genre), r.id); assert.ok(r.urls.every((u) => u.startsWith(site2.HOST))); }
+  assert.ok(site2.HOME_ROWS.some((r) => r.genre === "infantil"));
+});
