@@ -43,11 +43,12 @@ export async function listPage(url) {
 }
 // Kino's Home by categories: one typed row per kind of title the site has, movies only (the site has no video for series). Its genre
 // page "familia" is the kids' shelf and "documental" the documentaries; it has no anime section, so no Anime row. `genre` is Kino's type tag.
+// Its genre pages live under /genero/ (2026-11-25: /genre/documental/ is a 404 and /genre/familia/ redirects to one film's page).
 export const HOME_ROWS = [
   { id: "estrenos", title: "Estrenos", titleEn: "New releases", genre: "peliculas", urls: [HOST + "peliculas/"] },
   { id: "peliculas-populares", title: "Películas populares", titleEn: "Popular movies", genre: "peliculas", urls: [HOST + "tendencias/"] },
-  { id: "infantil", title: "Infantil", titleEn: "Kids", genre: "infantil", urls: [HOST + "genre/familia/"] },
-  { id: "documentales", title: "Documentales", titleEn: "Documentaries", genre: "documentales", urls: [HOST + "genre/documental/"] },
+  { id: "infantil", title: "Infantil", titleEn: "Kids", genre: "infantil", urls: [HOST + "genero/familia/"] },
+  { id: "documentales", title: "Documentales", titleEn: "Documentaries", genre: "documentales", urls: [HOST + "genero/documental/"] },
 ];
 
 async function genreList(base) {
@@ -59,7 +60,7 @@ async function genreList(base) {
 // Populares tab: /tendencias/ is a mixed movie+series grid; only its movies are kept.
 async function popularCatalog() {
   const movies = parseCards(await dl(HOST + "tendencias/"));
-  return movies.length ? [{ title: "Películas populares", titleEn: "Popular movies", items: movies }] : [];
+  return movies.length ? [{ title: "Películas populares", titleEn: "Popular movies", url: HOST + "tendencias/", items: movies }] : [];
 }
 
 // Home rows for a tab. kind: "movie" (Películas) | "popular" (Populares). Row 0 = recent/top (feeds the hero), then a rail
@@ -69,11 +70,11 @@ export async function catalog(kind) {
   const base = HOST + "peliculas/";
   const recientes = await listPage(base);
   const rows = [];
-  if (recientes.length) rows.push({ title: "Estrenos", titleEn: "New releases", items: recientes });
+  if (recientes.length) rows.push({ title: "Estrenos", titleEn: "New releases", url: base, items: recientes });
   let genres = [];
   try { genres = await genreList(base); } catch { /* ignore */ }
   const genreRows = await Promise.all(genres.slice(0, 6).map(async (g) => {
-    try { const items = await listPage(g.url); return items.length ? { title: g.title, items } : null; } catch { return null; }
+    try { const items = await listPage(g.url); return items.length ? { title: g.title, url: g.url, items } : null; } catch { return null; }
   }));
   for (const r of genreRows) if (r) rows.push(r);
   return rows;

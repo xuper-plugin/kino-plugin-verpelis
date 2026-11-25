@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.12
+
+- Home rows open their full list with Ver más, and so do the screen's rows (recent, genres, popular); the Infantil and Documentales rows read the site's real genre pages again
+
 ## 0.1.11
 
 - Home by categories: the plugin now answers Kino's home() with typed rows (Estrenos and popular titles as Películas, Infantil, Documentales)

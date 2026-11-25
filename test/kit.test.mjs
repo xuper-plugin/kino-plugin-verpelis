@@ -105,3 +105,59 @@ test("home(): the site's own rows are typed with Kino's closed vocabulary", asyn
   for (const r of site2.HOME_ROWS) { assert.ok(ok.has(r.genre), r.id); assert.ok(r.urls.every((u) => u.startsWith(site2.HOST))); }
   assert.ok(site2.HOME_ROWS.some((r) => r.genre === "infantil"));
 });
+
+// "Ver más": Home rows carry "hr|<id>", screen rows "l|<listing url>"; browse pages the WordPress <url>page/N/ and answers next.
+function pagedSite(asked) {
+  const card = (u, n, k) => ({ url: `${u}t${n}-${k}`, title: `T${n}${k}`, type: "movie" });
+  return {
+    ...site,
+    HOME_ROWS: [{ id: "infantil", title: "Infantil", genre: "infantil", urls: ["https://x.example/genre/familia/", "https://x.example/genre/kids/"] }],
+    listPage: async (url) => {
+      asked.push(url);
+      const n = Number((/page\/(\d+)\/$/.exec(url) || [])[1] || 1);
+      return n > 2 ? [] : [card(url, n, "a"), card(url, n, "b")];
+    },
+    catalog: async () => [
+      { title: "Estrenos", url: "https://x.example/movies/", items: [{ url: "https://x.example/a", title: "A", type: "movie" }] },
+      { title: "Fuera", url: "https://other.example/movies/", items: [{ url: "https://x.example/b", title: "B", type: "movie" }] },
+      { title: "Sin lista", items: [{ url: "https://x.example/c", title: "C", type: "movie" }] },
+    ],
+  };
+}
+
+test("home rows carry a hr| ref; browse pages every listing of the row and answers next while titles come", async () => {
+  globalThis.kino = { ...kinoWith("es"), sleep: async () => {} };
+  const asked = [];
+  const ch = channel(pagedSite(asked));
+  const rows = await ch.home();
+  assert.ok(rows.length);
+  for (const r of rows) assert.equal(r.ref, "hr|" + r.id); // home() keeps its last answer a while (an earlier test's rows here)
+  asked.length = 0;
+  const p1 = await ch.browse("hr|infantil", null);
+  assert.deepEqual(asked, ["https://x.example/genre/familia/", "https://x.example/genre/kids/"]);
+  assert.equal(p1.items.length, 4);
+  assert.equal(p1.next, "2");
+  assert.equal(p1.cursor, undefined);
+  asked.length = 0;
+  const p2 = await ch.browse("hr|infantil", p1.next);
+  assert.deepEqual(asked, ["https://x.example/genre/familia/page/2/", "https://x.example/genre/kids/page/2/"]);
+  assert.equal(p2.items.length, 4);
+  assert.notEqual(p2.items[0].ref, p1.items[0].ref);
+  assert.deepEqual(await ch.browse("hr|infantil", "3"), { items: [] });
+  await assert.rejects(ch.browse("hr|nope", null), (e) => e.code === "not_found");
+});
+
+test("screen rows carry an l| ref only for the site's own listing; browse refuses any other url", async () => {
+  globalThis.kino = kinoWith("es");
+  const asked = [];
+  const ch = channel(pagedSite(asked));
+  const rows = await ch.catalogRows("movie");
+  assert.deepEqual(rows.map((r) => r.ref), ["l|https://x.example/movies/", undefined, undefined]);
+  const p2 = await ch.browse(rows[0].ref, "2");
+  assert.deepEqual(asked, ["https://x.example/movies/page/2/"]);
+  assert.equal(p2.next, "3");
+  for (const bad of ["l|https://other.example/movies/", "l|https://x.example/", "l|https://x.example/../x/", "l|https://x.example/?s=a", "m|https://x.example/a", null]) {
+    await assert.rejects(ch.browse(bad, null), (e) => e.code === "not_found", String(bad));
+  }
+  assert.equal(asked.length, 1);
+});

@@ -1,7 +1,7 @@
 {
   "id": "verpelis",
   "name": "VerPelis",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "apiVersion": 30,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -20,6 +20,7 @@
   "capabilities": [
     "search",
     "home",
+    "browse",
     "resolve",
     "screen"
   ],
@@ -77,6 +78,6 @@
   },
   "signature": {
     "authorKey": "6693946bd5c56196960959c4b9665fad5094374bcb85ddb282f8bf762c835263",
-    "value": "e65e259fbec35aa13434b4e358922fc54092414b04ac8275fcfdde0acab63cb6de0ea9b8ff28a3ae5eb7fad3cc16f27fa8421af237cca2f399447c071a2a830c"
+    "value": "af4054e5c25a9ab1e9d698330e21eb0c21be9a7b47ba55628bb39d9ba6a076738bb52c6c9543dbd75c8b018b83c99a2b3ad19955609f9cd107ffd77c4ce2d10a"
   }
 }

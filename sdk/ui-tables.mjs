@@ -513,7 +513,10 @@ const GO_FIELDS = {
   relinkTelegram: "`{ relinkTelegram: true }`",
   useTheme: `\`{ useTheme: { ${S.goUseTheme.fields.join(", ")} } }\``,
   installPlugin: `\`{ installPlugin: { ${S.goInstallPlugin.fields.join(", ")} } }\``,
+  uninstallPlugin: `\`{ uninstallPlugin: { ${S.goUninstallPlugin.fields.join(", ")} } }\``,
+  applyImageTheme: `\`{ applyImageTheme: { ${S.goApplyImageTheme.fields.join(", ")} } }\``,
   plugin: `\`{ plugin: { ${S.goPlugin.fields.join(", ")} } }\``,
+  episode: `\`{ episode: { ${S.goEpisode.fields.join(", ")} } }\``,
   setExperience: `\`{ setExperience: ${S.goSetExperience.words.map((w) => `"${w}"`).join(" | ")} }\``,
 };
 const GO_OPENS = {
@@ -527,6 +530,7 @@ const GO_OPENS = {
   close: "closes the screen",
   screen: `this plugin's own screen at \`route\` (at most ${L.maxGoRouteChars} characters) with \`args\` (at most ${n(L.maxGoArgsBytes)} bytes)`,
   titleByIds: "Kino's own title page for TMDB or IMDb ids, with every source the person has",
+  episode: "one chapter (`season`, `episode`) of another plugin's series, named by its `origin` (`owner/repo`) and its own series `ref`",
   url: "an https link in the browser, after Kino's own sheet (a QR code on a TV)",
   copy: `Kino copies \`text\` (at most ${S.goCopy.maxTextChars} characters, ${S.goCopy.maxLines} lines) and shows its own «Copiado» toast; a TV cannot`,
   liveChannel: "tunes the player to an En vivo provider's channel (only for a plugin whose player tab joins live channels)",
@@ -535,14 +539,18 @@ const GO_OPENS = {
   useTheme: "turns on one of this plugin's own `appThemes` as Apariencia does, or back to Kino's theme with `theme: null`; Kino shows its own toast",
   setExperience: "asks for the light or the full experience of the whole app; Kino asks the person first and changes nothing without their yes",
   installPlugin: "Kino's own install sheet for `repo` (a plain `owner/name`); nothing installs without the person's own Instalar",
+  uninstallPlugin: "Kino's own uninstall question for `repo`, a plugin yours manages (`manage`); nothing is uninstalled without the person's own Desinstalar",
+  applyImageTheme: "Kino's own sheet offering an image as the person's theme; nothing changes without the person's own yes there",
   plugin: "another plugin's screen at `route` with `args`, or its search for `query`, found by `repo` (a GitHub `owner/name[/path]`)",
 };
 const goFrom = (g) => g === "relinkTelegram" ? `only the person's own ${S.goUrl.fromTriggers.join(" or ")}, from apiVersion ${S.goRelinkTelegram.apiVersion}`
   : g === "plugin" ?`only the person's own ${S.goUrl.fromTriggers.join(" or ")} on your screen, from apiVersion ${S.goPlugin.apiVersion}`
+  : g === "applyImageTheme" ? `only the person's own ${S.goUrl.fromTriggers.join(" or ")} on your screen, from apiVersion ${S.goApplyImageTheme.apiVersion}`
+  : g === "uninstallPlugin" ? `only the person's own ${S.goUrl.fromTriggers.join(" or ")} on your screen, from apiVersion ${S.goUninstallPlugin.apiVersion}`
   : g === "installPlugin" ? `only the person's own ${S.goUrl.fromTriggers.join(" or ")} on your screen, from apiVersion ${S.goInstallPlugin.apiVersion}`
   : g === "setExperience" ? `only the person's own ${S.goUrl.fromTriggers.join(" or ")} on your screen, from apiVersion ${S.goSetExperience.apiVersion}`
   : g === "useTheme" ? `only the person's own ${S.goUrl.fromTriggers.join(" or ")} on your screen, from apiVersion ${S.goUseTheme.apiVersion}`
-  : g === "titleByIds" || g === "url" || g === "copy" || g === "liveChannel" || g === "syncProvider"
+  : g === "titleByIds" || g === "url" || g === "copy" || g === "liveChannel" || g === "syncProvider" || g === "episode"
   ? `only the person's own ${S.goUrl.fromTriggers.join(" or ")}`
   : g === "screen" ? "a tap or an answer, `open`'s included" : "a tap or an event's answer (never `open`'s, a timer's or an `onClose`'s)";
 

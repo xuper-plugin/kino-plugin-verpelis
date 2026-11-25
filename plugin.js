@@ -116,8 +116,11 @@ function noteServer(id, ok) {
   }
 }
 var say = (es, en) => String(globalThis.kino && kino.lang || "").toLowerCase().startsWith("es") ? es : en;
+var MAX_PAGE = 500;
+var pageUrl = (url, n) => n > 1 ? String(url).replace(/\/*$/, "/") + "page/" + n + "/" : url;
 function channel(site) {
   const name = site.NAME || "este sitio";
+  const ownListing = (url) => typeof url === "string" && !!site.HOST && url.startsWith(site.HOST) && url.length > site.HOST.length && !/[?#]|\.\./.test(url);
   function mapItem(it) {
     const item = { id: slug(it.url), ref: (it.type === "tvshow" ? "s|" : "m|") + it.url, title: it.title, kind: it.type === "tvshow" ? "series" : "movie" };
     const y = Number(it.year);
@@ -133,7 +136,7 @@ function channel(site) {
     if (cache[tab] && now - at[tab] < TTL) return cache[tab];
     try {
       const rows = await site.catalog(tab) || [];
-      cache[tab] = rows.map((r) => ({ title: r.title, titleEn: r.titleEn || genreEn(r.title), items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
+      cache[tab] = rows.map((r) => ({ title: r.title, titleEn: r.titleEn || genreEn(r.title), url: r.url, items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
       at[tab] = now;
     } catch {
       cache[tab] = cache[tab] || [];
@@ -262,7 +265,7 @@ function channel(site) {
           }
           if (!any) break;
         }
-        if (items.length) out[i] = { id: d.id, title: d.title, ...d.titleEn ? { titleEn: d.titleEn } : {}, genre: d.genre, items: items.slice(0, HOME_ROW_MAX) };
+        if (items.length) out[i] = { id: d.id, title: d.title, ...d.titleEn ? { titleEn: d.titleEn } : {}, genre: d.genre, ref: "hr|" + d.id, items: items.slice(0, HOME_ROW_MAX) };
       }).catch(() => {
       }))).then(() => {
         done = true;
@@ -287,7 +290,44 @@ function channel(site) {
     },
     /** The site's catalog for one kind ("movie", "tvshow", "popular") as the standard screen's rows (5 min cache). */
     async catalogRows(kind) {
-      return (await loadCatalog(kind)).map((r) => ({ id: slug(r.title), title: r.title, ...r.titleEn ? { titleEn: r.titleEn } : {}, items: r.items }));
+      return (await loadCatalog(kind)).map((r) => ({
+        id: slug(r.title),
+        title: r.title,
+        ...r.titleEn ? { titleEn: r.titleEn } : {},
+        ...ownListing(r.url) ? { ref: "l|" + r.url } : {},
+        items: r.items
+      }));
+    },
+    /**
+     * `browse(ref, cursor)`: one "Ver más" page. "hr|<id>" is a Home row (site.HOME_ROWS: its listing pages, merged as home()
+     * merges them), "l|<url>" a screen row's listing page of the site. Page N is the WordPress `<url>page/N/` (page 1 the bare
+     * url); `next` (Kino reads it, never `cursor`) is the following page while a page brings titles (past the last the site 404s).
+     */
+    async browse(ref, cursor) {
+      const s = String(ref || "");
+      let urls = null;
+      if (s.startsWith("hr|")) {
+        const d = (site.HOME_ROWS || []).find((x) => x.id === s.slice(3));
+        if (d) urls = d.urls;
+      } else if (s.startsWith("l|") && ownListing(s.slice(2))) urls = [s.slice(2)];
+      if (!urls || !urls.length || !site.listPage) throw kino.error("not_found", "unknown browse ref");
+      const n = Number.parseInt(cursor, 10);
+      const page = n >= 1 && n <= MAX_PAGE ? n : 1;
+      const pages = await Promise.all(urls.map((u) => site.listPage(pageUrl(u, page)).catch(() => [])));
+      const seen = /* @__PURE__ */ new Set();
+      const items = [];
+      for (let k = 0; ; k++) {
+        let any = false;
+        for (const p of pages) if (k < p.length) {
+          any = true;
+          if (!seen.has(p[k].url)) {
+            seen.add(p[k].url);
+            items.push(mapItem(p[k]));
+          }
+        }
+        if (!any) break;
+      }
+      return items.length && page < MAX_PAGE ? { items, next: String(page + 1) } : { items };
     }
   };
 }
@@ -390,8 +430,8 @@ async function listPage(url) {
 var HOME_ROWS = [
   { id: "estrenos", title: "Estrenos", titleEn: "New releases", genre: "peliculas", urls: [HOST + "peliculas/"] },
   { id: "peliculas-populares", title: "Películas populares", titleEn: "Popular movies", genre: "peliculas", urls: [HOST + "tendencias/"] },
-  { id: "infantil", title: "Infantil", titleEn: "Kids", genre: "infantil", urls: [HOST + "genre/familia/"] },
-  { id: "documentales", title: "Documentales", titleEn: "Documentaries", genre: "documentales", urls: [HOST + "genre/documental/"] }
+  { id: "infantil", title: "Infantil", titleEn: "Kids", genre: "infantil", urls: [HOST + "genero/familia/"] },
+  { id: "documentales", title: "Documentales", titleEn: "Documentaries", genre: "documentales", urls: [HOST + "genero/documental/"] }
 ];
 async function genreList(base) {
   const data = await dl(base);
@@ -400,14 +440,14 @@ async function genreList(base) {
 }
 async function popularCatalog() {
   const movies = parseCards(await dl(HOST + "tendencias/"));
-  return movies.length ? [{ title: "Películas populares", titleEn: "Popular movies", items: movies }] : [];
+  return movies.length ? [{ title: "Películas populares", titleEn: "Popular movies", url: HOST + "tendencias/", items: movies }] : [];
 }
 async function catalog(kind) {
   if (kind === "popular") return popularCatalog();
   const base = HOST + "peliculas/";
   const recientes = await listPage(base);
   const rows = [];
-  if (recientes.length) rows.push({ title: "Estrenos", titleEn: "New releases", items: recientes });
+  if (recientes.length) rows.push({ title: "Estrenos", titleEn: "New releases", url: base, items: recientes });
   let genres = [];
   try {
     genres = await genreList(base);
@@ -416,7 +456,7 @@ async function catalog(kind) {
   const genreRows = await Promise.all(genres.slice(0, 6).map(async (g) => {
     try {
       const items = await listPage(g.url);
-      return items.length ? { title: g.title, items } : null;
+      return items.length ? { title: g.title, url: g.url, items } : null;
     } catch {
       return null;
     }
@@ -1294,6 +1334,7 @@ var ch = channel(site_exports);
 var search2 = ch.search;
 var resolve = ch.resolve;
 var home = ch.home;
+var browse = ch.browse;
 var std = null;
 var standard = () => std ?? (std = makeStandardScreen({
   snapshot: "xuper-plugin/kino-plugin-verpelis",
@@ -1319,6 +1360,7 @@ async function screenEvent(ev) {
 }
 var proto_catalog_search = catalogDoor(search2);
 export {
+  browse,
   home,
   proto_catalog_search,
   resolve,

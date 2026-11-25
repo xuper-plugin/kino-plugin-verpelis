@@ -6,7 +6,8 @@
 //   export const NAME = "Example";
 //   export async function search(q)        -> [{ url, title, thumb?, year?, type:"movie"|"tvshow" }]
 //   export async function findvideos(url)  -> [{ url, lang? }]
-//   export async function catalog(kind)    -> [{ title, titleEn?, items:[{url,title,thumb?,year?,type}] }]  // kind: "movie"|"tvshow"
+//   export async function catalog(kind)    -> [{ title, titleEn?, url?, items:[{url,title,thumb?,year?,type}] }]  // kind: "movie"|"tvshow"
+//                                             (url: the row's listing page; a row with one gets "Ver más")
 //   export const HOME_ROWS = [{ id, title, titleEn?, genre, urls:[listing pages] }]  // optional: the typed rows of home()
 //   export async function listPage(url)    -> [{ url, title, thumb?, year?, type }]                         // with HOME_ROWS
 //   export async function seasons(url)     -> [{ season }]                                                  // optional (series)
@@ -61,8 +62,15 @@ function noteServer(id, ok) {
 /** A message for the person in their language: Spanish when Kino's language is Spanish, else English. */
 const say = (es, en) => (String((globalThis.kino && kino.lang) || "").toLowerCase().startsWith("es") ? es : en);
 
+/** The last "Ver más" page asked for. */
+const MAX_PAGE = 500;
+/** Page [n] of a WordPress listing [url]: the url itself for page 1, else `<url>/page/<n>/`. */
+const pageUrl = (url, n) => (n > 1 ? String(url).replace(/\/*$/, "/") + "page/" + n + "/" : url);
+
 export function channel(site) {
   const name = site.NAME || "este sitio";
+  /** True for a listing page of the site itself (an https url under site.HOST): the only urls a "Ver más" ref may carry. */
+  const ownListing = (url) => typeof url === "string" && !!site.HOST && url.startsWith(site.HOST) && url.length > site.HOST.length && !/[?#]|\.\./.test(url);
 
   function mapItem(it) {
     const item = { id: slug(it.url), ref: (it.type === "tvshow" ? "s|" : "m|") + it.url, title: it.title, kind: it.type === "tvshow" ? "series" : "movie" };
@@ -79,7 +87,7 @@ export function channel(site) {
     if (cache[tab] && now - at[tab] < TTL) return cache[tab];
     try {
       const rows = (await site.catalog(tab)) || [];
-      cache[tab] = rows.map((r) => ({ title: r.title, titleEn: r.titleEn || genreEn(r.title), items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
+      cache[tab] = rows.map((r) => ({ title: r.title, titleEn: r.titleEn || genreEn(r.title), url: r.url, items: (r.items || []).map(mapItem) })).filter((r) => r.items.length);
       at[tab] = now;
     } catch { cache[tab] = cache[tab] || []; }
     return cache[tab];
@@ -205,7 +213,7 @@ export function channel(site) {
           for (const p of pages) if (k < p.length) { any = true; if (!seen.has(p[k].url)) { seen.add(p[k].url); items.push(mapItem(p[k])); } }
           if (!any) break;
         }
-        if (items.length) out[i] = { id: d.id, title: d.title, ...(d.titleEn ? { titleEn: d.titleEn } : {}), genre: d.genre, items: items.slice(0, HOME_ROW_MAX) };
+        if (items.length) out[i] = { id: d.id, title: d.title, ...(d.titleEn ? { titleEn: d.titleEn } : {}), genre: d.genre, ref: "hr|" + d.id, items: items.slice(0, HOME_ROW_MAX) };
       }).catch(() => {}))).then(() => { done = true; });
       const end = Date.now() + HOME_BUDGET_MS;
       while (!done && Date.now() < end) await Promise.race([all, kino.sleep(Math.min(250, Math.max(1, end - Date.now())))]);
@@ -221,7 +229,34 @@ export function channel(site) {
 
     /** The site's catalog for one kind ("movie", "tvshow", "popular") as the standard screen's rows (5 min cache). */
     async catalogRows(kind) {
-      return (await loadCatalog(kind)).map((r) => ({ id: slug(r.title), title: r.title, ...(r.titleEn ? { titleEn: r.titleEn } : {}), items: r.items }));
+      return (await loadCatalog(kind)).map((r) => ({ id: slug(r.title), title: r.title, ...(r.titleEn ? { titleEn: r.titleEn } : {}),
+        ...(ownListing(r.url) ? { ref: "l|" + r.url } : {}), items: r.items }));
+    },
+
+    /**
+     * `browse(ref, cursor)`: one "Ver más" page. "hr|<id>" is a Home row (site.HOME_ROWS: its listing pages, merged as home()
+     * merges them), "l|<url>" a screen row's listing page of the site. Page N is the WordPress `<url>page/N/` (page 1 the bare
+     * url); `next` (Kino reads it, never `cursor`) is the following page while a page brings titles (past the last the site 404s).
+     */
+    async browse(ref, cursor) {
+      const s = String(ref || "");
+      let urls = null;
+      if (s.startsWith("hr|")) {
+        const d = (site.HOME_ROWS || []).find((x) => x.id === s.slice(3));
+        if (d) urls = d.urls;
+      } else if (s.startsWith("l|") && ownListing(s.slice(2))) urls = [s.slice(2)];
+      if (!urls || !urls.length || !site.listPage) throw kino.error("not_found", "unknown browse ref");
+      const n = Number.parseInt(cursor, 10);
+      const page = n >= 1 && n <= MAX_PAGE ? n : 1;
+      const pages = await Promise.all(urls.map((u) => site.listPage(pageUrl(u, page)).catch(() => [])));
+      const seen = new Set();
+      const items = [];
+      for (let k = 0; ; k++) {
+        let any = false;
+        for (const p of pages) if (k < p.length) { any = true; if (!seen.has(p[k].url)) { seen.add(p[k].url); items.push(mapItem(p[k])); } }
+        if (!any) break;
+      }
+      return items.length && page < MAX_PAGE ? { items, next: String(page + 1) } : { items };
     },
   };
 }
